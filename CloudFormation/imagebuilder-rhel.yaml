@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'EC2 Image Builder Pipeline to build a DISA STIG compliant RHEL EKS worker node.'
+Parameters:
+  BinaryBucketName:
+    Default: 'amazon-eks'
+    Description: The S3 bucket where the EKS binaries are hosted
+    Type: String
+  BinaryBucketRegion:
+    Default: 'us-west-2'
+    Description: The AWS region where the EKS binary S3 bucket resides
+    Type: String
+  ContainerSELinuxVersion:
+    Default: '*'
+    Description: The version of container-se-linux to be installed
+    Type: String
+  ContainerdUrl:
+    Default: 'https://api.github.com/repos/containerd/containerd/releases/latest'
+    Description: The version of containerd to install
+    Type: String
+  ContainerdVersion:
+    Default: '*'
+    Description: The version of containerd to install
+    Type: String
+  EnableFips:
+    Default: 'false'
+    Description: Whether or not to enable FIPS encryption
+    Type: String
+  GithubDir:
+    Default: 'amazon-eks-ami-rhel'
+    Description: The local relative directory name of the Github Repository
+    Type: String
+  GithubRepoUrl:
+    Default: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
+    Description: The Github Repository URL for downloading the install script and files
+    Type: String
+  HomePath:
+    Default: '/home/ec2-user'
+    Description: The home directory of the user executing the install script
+    Type: String
+  KubernetesVersion:
+    AllowedValues:
+      - '1.21'
+      - '1.22'
+      - '1.23'
+      - '1.24'
+      - '1.25'
+      - '1.26'
+      - '1.27'
+      - '1.28'
+      - '1.29'
+      - '1.30'
+    Default: '1.28'
+    Description: The Kubernetes version of the worker nodes
+    Type: String
+  NerdctlUrl:
+    Default: 'https://api.github.com/repos/containerd/nerdctl/releases/latest'
+    Description: The version of containerd to install
+    Type: String
+  RuncVersion:
+    Default: '*'
+    Description: The version of runc to install
+    Type: String
+  SSMAgentVersion:
+    Default: 'latest'
+    Description: The version of the SSM Agent to install
+    Type: String
+  TempPath:
+    Default: '/tmp'
+    Description: The local temp directory
+    Type: String
+  WorkerDir:
+    Default: 'worker'
+    Description: The working directory of the install script
+    Type: String
+
+
+Resources:
+
+  ImageBuilderRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns: 
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder'
+
+  ImageBuilderSSMIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssm:ListInstanceAssociations
+              - ssm:PutComplianceItems
+              - ssm:PutConfigurePackageResult
+              - ssm:PutInventory
+              - ssm:UpdateInstanceAssociationStatus
+              - ssm:UpdateInstanceInformation
+              - ssmmessages:CreateControlChannel
+              - ssmmessages:CreateDataChannel
+              - ssmmessages:OpenControlChannel
+              - ssmmessages:OpenDataChannel
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - ssm:DescribeDocument
+              - ssm:GetDocument
+              - ssm:GetManifest
+            Resource: 
+              - !Sub 'arn:${AWS::Partition}:ssm:*:*:document/AmazonInspector2-InspectorSsmPluginLinux'
+              - !Sub 'arn:${AWS::Partition}:ssm:*:*:document/AWS-GatherSoftwareInventory'
+      PolicyName: !Sub '${AWS::StackName}-SSMPolicy'
+      Roles: 
+        - !Ref ImageBuilderRole
+
+  ImageBuilderCodeCommitIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - codecommit:GitPull
+            Resource: !Sub 'arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${GithubDir}'
+      PolicyName: !Sub '${AWS::StackName}-CodeCommitPolicy'
+      Roles: 
+        - !Ref ImageBuilderRole
+
+  ImageBuilderS3IAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:Get*
+              - s3:List*
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:s3:::${BinaryBucketName}/*'
+              - !Sub 'arn:${AWS::Partition}:s3:::${BinaryBucketName}'
+      PolicyName: !Sub '${AWS::StackName}-S3Policy'
+      Roles: 
+        - !Ref ImageBuilderRole
+
+  ImageBuilderInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref ImageBuilderRole
+
+  ImageBuilderComponent:
+    Type: 'AWS::ImageBuilder::Component'
+    Properties:
+      Name: !Sub '${AWS::StackName}-component'
+      Platform: 'Linux'
+      Version: !Sub '${KubernetesVersion}.0'
+      Description: !Sub 'Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and the latest version of containerd.'
+      ChangeDescription: 'change-description'
+      SupportedOsVersions: 
+          - 'Red Hat Enterprise Linux 8'
+      Data: !Sub |
+        name: Amazon EKS Optimized RHEL AMI
+        description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and the latest version of containerd.
+        schemaVersion: 1.0
+        constants:
+          - AWSRegion:
+              type: string
+              value: '${AWS::Region}'
+          - KubernetesVersion:
+              type: string
+              value: '${KubernetesVersion}'
+          - GithubRepoUrl:
+              type: string
+              value: '${GithubRepoUrl}'
+          - GithubDir:
+              type: string
+              value: '${GithubDir}'
+          - BinaryBucketName:
+              type: string
+              value: '${BinaryBucketName}'
+          - BinaryBucketRegion:
+              type: string
+              value: '${BinaryBucketRegion}'
+          - ContainerSELinuxVersion:
+              type: string
+              value: '${ContainerSELinuxVersion}'
+          - ContainerdUrl:
+              type: string
+              value: '${ContainerdUrl}'
+          - ContainerdVersion:
+              type: string
+              value: '${ContainerdVersion}'
+          - NerdctlUrl:
+              type: string
+              value: '${NerdctlUrl}'
+          - RuncVersion:
+              type: string
+              value: '${RuncVersion}'
+          - TempPath:
+              type: string
+              value: '${TempPath}'
+          - WorkerDir:
+              type: string
+              value: '${WorkerDir}'
+          - HomePath:
+              type: string
+              value: '${HomePath}'
+          - EnableFips:
+              type: string
+              value: '${EnableFips}'
+          - SSMAgentVersion:
+              type: string
+              value: '${SSMAgentVersion}'
+        phases:
+          - name: build
+            steps:
+              - name: Setup
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - yum install -y git
+                    - cd {{ HomePath }}
+                    - export HOME="/root"
+                    - git config --global credential.helper '!aws codecommit credential-helper $@'
+                    - git config --global credential.UseHttpPath true
+                    - echo $(git config --list --show-origin)
+                    - git config --list --show-origin
+                    - git clone -b al2023-base --single-branch {{ GithubRepoUrl }}
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
+                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/shared/runtime/* {{ TempPath }}/{{ WorkerDir}}/shared/
+                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/rhel/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
+                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
+                    - sudo mkdir -p /etc/eks/log-collector-script/
+                    - sudo cp -v {{ TempPath }}/{{ WorkerDir}}/log-collector-script/eks-log-collector.sh /etc/eks/log-collector-script/
+                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/nodeadm/* {{ TempPath }}/{{ WorkerDir}}/nodeadm/
+                    - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
+                    - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
+                    - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+              - name: EnableFIPS
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh
+              - name: InstallWorker
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }})
+                    - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
+                    - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
+                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
+              - name: InstallNodeAdm
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+              - name: Cleanup
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
+                    - rm -rf {{ HomePath }}/*
+                    - rm -rf {{ TempPath }}/provisioners
+                    - rm -rf {{ TempPath }}/hack
+                    - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+                    
+
+  ImageBuilderImageRecipe:
+    Type: 'AWS::ImageBuilder::ImageRecipe'
+    Properties:
+      Name: !Sub '${AWS::StackName}-recipe'
+      Description: 'RHEL STIG EKS Recipe'
+      Version: !Sub '${KubernetesVersion}.0'
+      Components:
+        - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
+        - ComponentArn: !Ref ImageBuilderComponent
+      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
+      BlockDeviceMappings: 
+        - DeviceName: '/dev/sda1'
+          Ebs: 
+            DeleteOnTermination: true
+            Encrypted: false
+            VolumeSize: 50
+            VolumeType: 'gp3'
+      AdditionalInstanceConfiguration:
+        SystemsManagerAgent:
+          UninstallAfterBuild: false
+
+  ImageBuilderDistributionConfiguration:
+    Type: 'AWS::ImageBuilder::DistributionConfiguration'
+    Properties:
+      Name: !Sub '${AWS::StackName}-distro'
+      Distributions: 
+        - 
+          Region: !Ref AWS::Region
+          AmiDistributionConfiguration: {}
+
+  ImageBuilderInfrastructureConfiguration:
+    Type: 'AWS::ImageBuilder::InfrastructureConfiguration'
+    Properties:
+      Name: !Sub '${AWS::StackName}-infra-config'
+      InstanceProfileName: !Ref ImageBuilderInstanceProfile
+      Logging: 
+        S3Logs: {}
+      TerminateInstanceOnFailure: true
+
+  ImageBuilderImagePipeline:
+    Type: 'AWS::ImageBuilder::ImagePipeline'
+    Properties:
+      Name: !Sub '${AWS::StackName}-pipeline'
+      ImageRecipeArn: !Ref ImageBuilderImageRecipe
+      InfrastructureConfigurationArn: !Ref ImageBuilderInfrastructureConfiguration
+      DistributionConfigurationArn: !Ref ImageBuilderDistributionConfiguration
+      EnhancedImageMetadataEnabled: false
+      ImageTestsConfiguration: 
+        ImageTestsEnabled: true
+        TimeoutMinutes: 720
+      Schedule: 
+        ScheduleExpression: 'cron(0 9 ? * mon)'
+        PipelineExecutionStartCondition: 'EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE'
+      Status: 'ENABLED'

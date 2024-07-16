@@ -1,0 +1,118 @@
+name: Amazon EKS Optimized RHEL AMI
+description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS.
+schemaVersion: 1.0
+constants:
+  - AWSRegion:
+      type: string
+      value: 'us-west-2'
+  - KubernetesVersion:
+      type: string
+      value: '1.28'
+  - GithubRepoUrl:
+      type: string
+      value: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
+  - GithubDir:
+      type: string
+      value: 'amazon-eks-ami-rhel'
+  - BinaryBucketName:
+      type: string
+      value: 'amazon-eks'
+  - BinaryBucketRegion:
+      type: string
+      value: 'us-west-2'
+  - ContainerSELinuxVersion:
+      type: string
+      value: '*'
+  - ContainerdUrl:
+      type: string
+      value: 'https://api.github.com/repos/containerd/containerd/releases/latest'
+  - ContainerdVersion:
+      type: string
+      value: '*'
+  - NerdctlUrl:
+      type: string
+      value: 'https://api.github.com/repos/containerd/nerdctl/releases/latest'
+  - RuncVersion:
+      type: string
+      value: '*'
+  - TempPath:
+      type: string
+      value: '/tmp'
+  - WorkerDir:
+      type: string
+      value: 'worker'
+  - HomePath:
+      type: string
+      value: '/home/ec2-user'
+  - EnableFips:
+      type: string
+      value: 'false'
+  - SSMAgentVersion:
+      type: string
+      value: 'latest'
+phases:
+  - name: build
+    steps:
+      - name: Setup
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - yum install -y git
+            - cd {{ HomePath }}
+            - git clone {{ GithubRepoUrl }}
+            - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
+            - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
+            - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
+            - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/shared/runtime/* {{ TempPath }}/{{ WorkerDir}}/shared/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/rhel/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
+            - sudo mkdir -p /etc/eks/log-collector-script/
+            - sudo cp -v {{ TempPath }}/{{ WorkerDir}}/log-collector-script/eks-log-collector.sh /etc/eks/log-collector-script/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/nodeadm/* {{ TempPath }}/{{ WorkerDir}}/nodeadm/
+            - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
+            - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
+            - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+      - name: EnableFIPS
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh; fi
+      - name: InstallWorker
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }})
+            - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
+            - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
+            - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
+      - name: InstallNodeAdm
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+      - name: Cleanup
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
+            - sudo rm -rf {{ HomePath }}/*
+            - sudo rm -rf {{ TempPath }}/provisioners
+            - sudo rm -rf {{ TempPath }}/hack
+            - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
