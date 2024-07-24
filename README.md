@@ -1,4 +1,4 @@
-# Amazon EKS AMI RHEL Build Specification
+# Amazon EKS Custom AMI Build Specification
 
 This repository contains sample scripts and [AWS CloudFormation](https://aws.amazon.com/cloudformation/) templates for building Amazon EKS worker nodes. Currently all CloudFormation templates make use of [Amazon EC2 Image Builder](https://aws.amazon.com/image-builder/) for AMI builds. These templates make use of the [awslabs Amazon EKS AMI Build Specification repository](https://github.com/awslabs/amazon-eks-ami) and the [Red Hat Enterprise Linux (RHEL) specific variant repository](https://github.com/aws-samples/amazon-eks-ami-rhel).
 
