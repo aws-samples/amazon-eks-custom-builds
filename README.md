@@ -13,7 +13,7 @@ If you are new to Amazon EKS, we recommend that you follow our [Getting Started]
 
 ## 🗂️ Cloning the Github repository
 ```bash
-git clone https://github.com/aws-samples/amazon-eks-ami-rhel.git && cd amazon-eks-ami-rhel
+git clone https://github.com/aws-samples/amazon-eks-custom-builds.git && cd amazon-eks-custom-builds
 
 ```
 
@@ -24,6 +24,7 @@ Building an EKS worker node is as simple as modifying one of the sample CloudFor
 This could be done using an AWS CLI command using the default parameters defined in the CloudFormation template.
 ```bash
 aws cloudformation create-stack --stack-name my-eks-worker-stack --template-body file://path/to/your/template.yaml
+
 ```
 
 ## 🔒 Security

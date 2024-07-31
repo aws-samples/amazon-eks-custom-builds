@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'EC2 Image Builder Pipeline to build a DISA STIG compliant RHEL EKS worker node.'
+Description: 'EC2 Image Builder Pipeline to build a RHEL EKS worker node.'
+
 Parameters:
   BinaryBucketName:
     Default: 'amazon-eks'
@@ -73,7 +74,6 @@ Parameters:
     Description: The working directory of the install script
     Type: String
 
-
 Resources:
 
   ImageBuilderRole:
@@ -88,7 +88,7 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns: 
+      ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder'
 
   ImageBuilderSSMIAMPolicy:
@@ -122,20 +122,6 @@ Resources:
       Roles: 
         - !Ref ImageBuilderRole
 
-  ImageBuilderCodeCommitIAMPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - codecommit:GitPull
-            Resource: !Sub 'arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${GithubDir}'
-      PolicyName: !Sub '${AWS::StackName}-CodeCommitPolicy'
-      Roles: 
-        - !Ref ImageBuilderRole
-
   ImageBuilderS3IAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -163,15 +149,15 @@ Resources:
     Type: 'AWS::ImageBuilder::Component'
     Properties:
       Name: !Sub '${AWS::StackName}-component'
+      Description: !Sub 'RHEL EKS worker node installation component.'
       Platform: 'Linux'
       Version: !Sub '${KubernetesVersion}.0'
-      Description: !Sub 'Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and the latest version of containerd.'
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
           - 'Red Hat Enterprise Linux 8'
       Data: !Sub |
         name: Amazon EKS Optimized RHEL AMI
-        description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and the latest version of containerd.
+        description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
           - AWSRegion:
@@ -234,12 +220,7 @@ Resources:
                   commands:
                     - yum install -y git
                     - cd {{ HomePath }}
-                    - export HOME="/root"
-                    - git config --global credential.helper '!aws codecommit credential-helper $@'
-                    - git config --global credential.UseHttpPath true
-                    - echo $(git config --list --show-origin)
-                    - git config --list --show-origin
-                    - git clone -b al2023-base --single-branch {{ GithubRepoUrl }}
+                    - git clone {{ GithubRepoUrl }}
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
@@ -260,7 +241,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh
+                    - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -289,17 +270,16 @@ Resources:
                   commands:
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
-                    - rm -rf {{ HomePath }}/*
-                    - rm -rf {{ TempPath }}/provisioners
-                    - rm -rf {{ TempPath }}/hack
+                    - sudo rm -rf {{ HomePath }}/*
+                    - sudo rm -rf {{ TempPath }}/provisioners
+                    - sudo rm -rf {{ TempPath }}/hack
                     - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
-                    
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
     Properties:
       Name: !Sub '${AWS::StackName}-recipe'
-      Description: 'RHEL STIG EKS Recipe'
+      Description: 'RHEL EKS worker node recipe'
       Version: !Sub '${KubernetesVersion}.0'
       Components:
         - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
@@ -338,6 +318,7 @@ Resources:
     Type: 'AWS::ImageBuilder::ImagePipeline'
     Properties:
       Name: !Sub '${AWS::StackName}-pipeline'
+      Description: 'RHEL EKS worker node pipeline.'
       ImageRecipeArn: !Ref ImageBuilderImageRecipe
       InfrastructureConfigurationArn: !Ref ImageBuilderInfrastructureConfiguration
       DistributionConfigurationArn: !Ref ImageBuilderDistributionConfiguration
