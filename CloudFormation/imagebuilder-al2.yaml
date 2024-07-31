@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'EC2 Image Builder Pipeline to build a DISA STIG compliant AL2 EKS worker node.'
+Description: 'EC2 Image Builder Pipeline to build an Amazon Linux 2 EKS worker node.'
+
 Parameters:
   AdditionalRepos:
     Default: 'none'
@@ -89,7 +90,6 @@ Parameters:
     Description: The working directory of the install script
     Type: String
 
-
 Resources:
 
   ImageBuilderRole:
@@ -138,20 +138,6 @@ Resources:
       Roles: 
         - !Ref ImageBuilderRole
 
-  ImageBuilderCodeCommitIAMPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - codecommit:GitPull
-            Resource: !Sub 'arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${GithubDir}'
-      PolicyName: !Sub '${AWS::StackName}-CodeCommitPolicy'
-      Roles: 
-        - !Ref ImageBuilderRole
-
   ImageBuilderS3IAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -179,15 +165,15 @@ Resources:
     Type: 'AWS::ImageBuilder::Component'
     Properties:
       Name: !Sub '${AWS::StackName}-component'
+      Description: !Sub 'Amazon Linux 2 EKS worker node installation component.'
       Platform: 'Linux'
-      Version: !Sub '${KubernetesVersion}.0'
-      Description: !Sub 'Installs Amazon EKS-optimized AL2 artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and containerd version ${ContainerdVersion}.'
+      Version: !Sub '${KubernetesVersion}'
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
         - 'Amazon Linux 2'
       Data: !Sub |
         name: Amazon EKS Optimized AL2 AMI
-        description: Installs Amazon EKS-optimized AL2 artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and containerd version ${ContainerdVersion}.
+        description: Installs Amazon EKS-optimized AL2 artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
           - KubernetesVersion:
@@ -259,12 +245,9 @@ Resources:
                   commands:
                     - yum install -y git
                     - cd {{ HomePath }}
-                    - export HOME="/root"
-                    - git config --global credential.helper '!aws codecommit credential-helper $@'
-                    - git config --global credential.UseHttpPath true
                     - git clone {{ GithubRepoUrl }}
-                    - mkdir -p {{ TempPath }}/{{ WorkerDir}}
-                    - mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/shared/runtime/* {{ TempPath }}/{{ WorkerDir}}/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2/runtime/* {{ TempPath }}/{{ WorkerDir}}/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
@@ -297,7 +280,7 @@ Resources:
                     - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
                     - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
                     - if [ "{{ KernelVersion }}" != "none" ]; then KUBERNETES_VERSION=$KUBERNETES_VERSION KERNEL_VERSION={{ KernelVersion }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/upgrade-kernel.sh; fi
-                    - KUBERNETES_VERSION=$KUBERNETES_VERSION BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE DOCKER_VERSION={{ DockerVersion }} CONTAINERD_VERSION={{ ContainerdVersion }} RUNC_VERSION={{ RuncVersion }} CNI_PLUGIN_VERSION={{ CNIPluginVersion }} PULL_CNI_FROM_GITHUB={{ PullCNIFromGithub }} PAUSE_CONTAINER_VERSION={{ PauseContainerVersion }} CACHE_CONTAINER_IMAGES={{ CacheContainerImages }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/install-worker.sh
+                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} RUNC_VERSION={{ RuncVersion }} DOCKER_VERSION={{ DockerVersion }} CNI_PLUGIN_VERSION={{ CNIPluginVersion }} PULL_CNI_FROM_GITHUB={{ PullCNIFromGithub }} PAUSE_CONTAINER_VERSION={{ PauseContainerVersion }} CACHE_CONTAINER_IMAGES={{ CacheContainerImages }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/install-worker.sh
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -313,13 +296,12 @@ Resources:
                     - sudo rm -rf {{ TempPath }}/provisioners
                     - sudo rm -rf {{ TempPath }}/hack
                     - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
-                    
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
     Properties:
       Name: !Sub '${AWS::StackName}-recipe'
-      Description: 'AL2 STIG EKS Recipe'
+      Description: 'Amazon Linux 2 EKS worker node recipe'
       Version: !Sub '${KubernetesVersion}.0'
       Components:
         - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
@@ -358,6 +340,7 @@ Resources:
     Type: 'AWS::ImageBuilder::ImagePipeline'
     Properties:
       Name: !Sub '${AWS::StackName}-pipeline'
+      Description: 'Amazon Linux 2 EKS worker node pipeline.'
       ImageRecipeArn: !Ref ImageBuilderImageRecipe
       InfrastructureConfigurationArn: !Ref ImageBuilderInfrastructureConfiguration
       DistributionConfigurationArn: !Ref ImageBuilderDistributionConfiguration

@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'EC2 Image Builder Pipeline to build a DISA STIG compliant Amazon Linux 2023 EKS worker node.'
+Description: 'EC2 Image Builder Pipeline to build an Amazon Linux 2023 EKS worker node.'
+
 Parameters:
   BinaryBucketName:
     Default: 'amazon-eks'
@@ -61,7 +62,6 @@ Parameters:
     Description: The working directory of the install script
     Type: String
 
-
 Resources:
 
   ImageBuilderRole:
@@ -76,7 +76,7 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns: 
+      ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder'
 
   ImageBuilderSSMIAMPolicy:
@@ -110,20 +110,6 @@ Resources:
       Roles: 
         - !Ref ImageBuilderRole
 
-  ImageBuilderCodeCommitIAMPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - codecommit:GitPull
-            Resource: !Sub 'arn:${AWS::Partition}:codecommit:${AWS::Region}:${AWS::AccountId}:${GithubDir}'
-      PolicyName: !Sub '${AWS::StackName}-CodeCommitPolicy'
-      Roles: 
-        - !Ref ImageBuilderRole
-
   ImageBuilderS3IAMPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -151,15 +137,15 @@ Resources:
     Type: 'AWS::ImageBuilder::Component'
     Properties:
       Name: !Sub '${AWS::StackName}-component'
+      Description: !Sub 'Amazon Linux 2023 EKS worker node installation component.'
       Platform: 'Linux'
-      Version: !Sub '${KubernetesVersion}.0'
-      Description: !Sub 'Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and containerd version ${ContainerdVersion}.'
+      Version: !Sub '${KubernetesVersion}'
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
           - 'Amazon Linux 2023'
       Data: !Sub |
         name: Amazon EKS Optimized Amazon Linux 2023 AMI
-        description: Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS version ${KubernetesVersion}. This includes kubelet version ${KubernetesVersion} and containerd version ${ContainerdVersion}.
+        description: Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
           - KubernetesVersion:
@@ -210,11 +196,6 @@ Resources:
                   commands:
                     - yum install -y git
                     - cd {{ HomePath }}
-                    - export HOME="/root"
-                    - git config --global credential.helper '!aws codecommit credential-helper $@'
-                    - git config --global credential.UseHttpPath true
-                    - echo $(git config --list --show-origin)
-                    - git config --list --show-origin
                     - git clone {{ GithubRepoUrl }}
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
@@ -265,12 +246,10 @@ Resources:
                   commands:
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/validate.sh
-                    - rm -rf {{ HomePath }}/*
-                    - rm -rf {{ TempPath }}/provisioners
-                    - rm -rf {{ TempPath }}/hack
-                    - rm -rf {{ TempPath }}/{{ WorkerDir}}
+                    - sudo rm -rf {{ HomePath }}/*
+                    - sudo rm -rf {{ TempPath }}/provisioners
+                    - sudo rm -rf {{ TempPath }}/hack
                     - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
-                    - sudo rm -rf {{ HomePath }}/{{ GithubDir }}
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
@@ -315,6 +294,7 @@ Resources:
     Type: 'AWS::ImageBuilder::ImagePipeline'
     Properties:
       Name: !Sub '${AWS::StackName}-pipeline'
+      Description: 'Amazon Linux 2023 EKS worker node pipeline.'
       ImageRecipeArn: !Ref ImageBuilderImageRecipe
       InfrastructureConfigurationArn: !Ref ImageBuilderInfrastructureConfiguration
       DistributionConfigurationArn: !Ref ImageBuilderDistributionConfiguration
