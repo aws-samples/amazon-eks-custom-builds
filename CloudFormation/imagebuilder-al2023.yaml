@@ -139,7 +139,7 @@ Resources:
       Name: !Sub '${AWS::StackName}-component'
       Description: !Sub 'Amazon Linux 2023 EKS worker node installation component.'
       Platform: 'Linux'
-      Version: !Sub '${KubernetesVersion}'
+      Version: !Sub '${KubernetesVersion}.0'
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
           - 'Amazon Linux 2023'
@@ -255,7 +255,7 @@ Resources:
     Type: 'AWS::ImageBuilder::ImageRecipe'
     Properties:
       Name: !Sub '${AWS::StackName}-recipe'
-      Description: 'Amazon Linux 2023 STIG EKS Recipe'
+      Description: 'Amazon Linux 2023 EKS worker node recipe'
       Version: !Sub '${KubernetesVersion}.0'
       Components:
         - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
@@ -306,3 +306,17 @@ Resources:
         ScheduleExpression: 'cron(0 9 ? * mon)'
         PipelineExecutionStartCondition: 'EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE'
       Status: 'ENABLED'
+
+Outputs:
+  ImageBuilderPipelineArn:
+    Description: ARN of the ImageBuilder Pipeline created
+    Value:
+      Ref: ImageBuilderImagePipeline
+  ImageBuilderRecipeArn:
+    Description: ARN of the ImageBuilder Recipe created
+    Value:
+      Ref: ImageBuilderImageRecipe
+  ImageBuilderComponentArn:
+    Description: ARN of the ImageBuilder Component created
+    Value:
+      Ref: ImageBuilderComponent
