@@ -352,3 +352,17 @@ Resources:
         ScheduleExpression: 'cron(0 9 ? * mon)'
         PipelineExecutionStartCondition: 'EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE'
       Status: 'ENABLED'
+
+Outputs:
+  ImageBuilderPipelineArn:
+    Description: ARN of the ImageBuilder Pipeline created
+    Value:
+      Ref: ImageBuilderImagePipeline
+  ImageBuilderRecipeArn:
+    Description: ARN of the ImageBuilder Recipe created
+    Value:
+      Ref: ImageBuilderImageRecipe
+  ImageBuilderComponentArn:
+    Description: ARN of the ImageBuilder Component created
+    Value:
+      Ref: ImageBuilderComponent
