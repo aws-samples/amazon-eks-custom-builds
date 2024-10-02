@@ -30,6 +30,10 @@ Parameters:
     Default: 'false'
     Description: Whether or not to enable FIPS encryption
     Type: String
+  EnableStig:
+    Default: 'false'
+    Description: Whether or not to enable STIG image component
+    Type: String
   GithubDir:
     Default: 'amazon-eks-ami-rhel'
     Description: The local relative directory name of the Github Repository
@@ -85,7 +89,11 @@ Parameters:
     Default: 'worker'
     Description: The working directory of the install script
     Type: String
-
+Conditions:
+  CheckStig:
+    'Fn::Equals':
+      - Ref: EnableStig
+      - true
 Resources:
 
   ImageBuilderRole:
@@ -321,6 +329,10 @@ Resources:
       Components:
         - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
         - ComponentArn: !Ref ImageBuilderComponent
+        - 'Fn::If':
+          - CheckStig
+          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux-high/x.x.x'
+          - !Ref 'AWS::NoValue'
       ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
       BlockDeviceMappings: 
         - DeviceName: '/dev/sda1'
