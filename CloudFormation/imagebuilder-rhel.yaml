@@ -22,6 +22,10 @@ Parameters:
     Default: '*'
     Description: The version of containerd to install
     Type: String
+  EnableEfa:
+    Default: 'false'
+    Description: Whether or not to enable Elastic Fabric Adapter
+    Type: String
   EnableFips:
     Default: 'false'
     Description: Whether or not to enable FIPS encryption
@@ -60,6 +64,10 @@ Parameters:
   NerdctlVersion:
     Default: '*'
     Description: The version of nerdctl to install
+    Type: String
+  NodeAdmBuildImage:
+    Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+    Description: The version of the nodeadmin build image to install
     Type: String
   RuncVersion:
     Default: '*'
@@ -197,6 +205,9 @@ Resources:
           - NerdctlVersion:
               type: string
               value: '${NerdctlVersion}'
+          - NodeAdmBuildImage:
+              type: string
+              value: '${NodeAdmBuildImage}'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
@@ -209,6 +220,9 @@ Resources:
           - HomePath:
               type: string
               value: '${HomePath}'
+          - EnableEfa:
+              type: string
+              value: '${EnableEfa}'
           - EnableFips:
               type: string
               value: '${EnableFips}'
@@ -249,6 +263,14 @@ Resources:
                 inputs:
                   commands:
                     - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh; fi
+              - name: EnableEFA
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -267,7 +289,15 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+                    - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+              - name: InstallEFA
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200

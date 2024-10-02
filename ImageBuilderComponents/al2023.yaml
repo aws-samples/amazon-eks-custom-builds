@@ -19,7 +19,13 @@ constants:
       value: 'us-west-2'
   - ContainerdVersion:
       type: string
-      value: '*'
+      value: '1.7.11-*'
+  - NodeAdmBuildImage:
+      type: string
+      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+  - NvidiaDriverMajorVersion:
+      type: string
+      value: '560'
   - RuncVersion:
       type: string
       value: '*'
@@ -32,6 +38,12 @@ constants:
   - HomePath:
       type: string
       value: '/home/ec2-user'
+  - EnableAccelerator:
+      type: string
+      value: 'none'
+  - EnableEfa:
+      type: string
+      value: 'false'
   - EnableFips:
       type: string
       value: 'false'
@@ -72,6 +84,14 @@ phases:
         inputs:
           commands:
             - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/enable-fips.sh; fi
+      - name: EnableEFA
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/limit-c-states.sh; fi
       - name: InstallWorker
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -90,7 +110,31 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+      - name: InstallNeuronDriver
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableAccelerator }}" = "neuron" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-neuron-driver.sh; fi
+      - name: InstallNvidiaDriver
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableAccelerator }}" = "nvidia" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} NVIDIA_DRIVER_MAJOR_VERSION={{ NvidiaDriverMajorVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nvidia-driver.sh; fi
+      - name: InstallEFA
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-efa.sh; fi
       - name: Cleanup
         action: ExecuteBash
         timeoutSeconds: 1200
