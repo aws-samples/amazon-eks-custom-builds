@@ -11,8 +11,16 @@ Parameters:
     Description: The AWS region where the EKS binary S3 bucket resides
     Type: String
   ContainerdVersion:
-    Default: '*'
+    Default: '1.7.11-*'
     Description: The version of containerd to install
+    Type: String
+  EnableAccelerator:
+    Default: 'none'
+    Description: AWS Inferentia accelerator drivers to install
+    Type: String
+  EnableEfa:
+    Default: 'false'
+    Description: Whether or not to enable Elastic Fabric Adapter
     Type: String
   EnableFips:
     Default: 'false'
@@ -44,6 +52,10 @@ Parameters:
       - '1.30'
     Default: '1.28'
     Description: The Kubernetes version of the worker nodes
+    Type: String
+  NodeAdmBuildImage:
+    Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+    Description: The version of the nodeadmin build image to install
     Type: String
   RuncVersion:
     Default: '*'
@@ -166,6 +178,9 @@ Resources:
           - ContainerdVersion:
               type: string
               value: '${ContainerdVersion}'
+          - NodeAdmBuildImage:
+              type: string
+              value: '${NodeAdmBuildImage}'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
@@ -178,6 +193,12 @@ Resources:
           - HomePath:
               type: string
               value: '${HomePath}'
+          - EnableAccelerator:
+              type: string
+              value: '${EnableAccelerator}'
+          - EnableEfa:
+              type: string
+              value: '${EnableEfa}'
           - EnableFips:
               type: string
               value: '${EnableFips}'
@@ -218,6 +239,14 @@ Resources:
                 inputs:
                   commands:
                     - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/enable-fips.sh; fi
+              - name: EnableEFA
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -236,7 +265,31 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+                    - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+              - name: InstallNeuronDriver
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableAccelerator }}" = "neuron" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-neuron-driver.sh; fi
+              - name: InstallNvidiaDriver
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableAccelerator }}" = "nvidia" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} NVIDIA_DRIVER_MAJOR_VERSION={{ NvidiaDriverMajorVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nvidia-driver.sh; fi
+              - name: InstallEFA
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-efa.sh; fi
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200

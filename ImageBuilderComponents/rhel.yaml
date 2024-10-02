@@ -35,6 +35,9 @@ constants:
   - NerdctlVersion:
       type: string
       value: '*'
+  - NodeAdmBuildImage:
+      type: string
+      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
   - RuncVersion:
       type: string
       value: '*'
@@ -47,6 +50,9 @@ constants:
   - HomePath:
       type: string
       value: '/home/ec2-user'
+  - EnableEfa:
+      type: string
+      value: 'false'
   - EnableFips:
       type: string
       value: 'false'
@@ -87,6 +93,14 @@ phases:
         inputs:
           commands:
             - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh; fi
+      - name: EnableEFA
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
       - name: InstallWorker
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -105,7 +119,15 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+      - name: InstallEFA
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
       - name: Cleanup
         action: ExecuteBash
         timeoutSeconds: 1200
