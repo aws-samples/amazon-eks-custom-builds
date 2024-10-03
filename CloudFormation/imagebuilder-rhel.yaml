@@ -328,11 +328,11 @@ Resources:
       Version: !Sub '${KubernetesVersion}.0'
       Components:
         - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
-        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - CheckStig
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux-high/x.x.x'
           - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref ImageBuilderComponent
       ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
       BlockDeviceMappings: 
         - DeviceName: '/dev/sda1'
