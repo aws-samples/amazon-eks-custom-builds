@@ -25,13 +25,13 @@ constants:
       value: '*'
   - ContainerdUrl:
       type: string
-      value: 'https://api.github.com/repos/containerd/containerd/releases/latest'
+      value: 'https://api.github.com/repos/containerd/containerd/releases'
   - ContainerdVersion:
       type: string
-      value: '*'
+      value: '1.7.23'
   - NerdctlUrl:
       type: string
-      value: 'https://api.github.com/repos/containerd/nerdctl/releases/latest'
+      value: 'https://api.github.com/repos/containerd/nerdctl/releases'
   - NerdctlVersion:
       type: string
       value: '*'

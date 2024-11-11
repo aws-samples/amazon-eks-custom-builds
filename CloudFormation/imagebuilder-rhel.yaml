@@ -15,11 +15,11 @@ Parameters:
     Description: The version of container-se-linux to be installed
     Type: String
   ContainerdUrl:
-    Default: 'https://api.github.com/repos/containerd/containerd/releases/latest'
+    Default: 'https://api.github.com/repos/containerd/containerd/releases'
     Description: The URL for the containerd install
     Type: String
   ContainerdVersion:
-    Default: '*'
+    Default: '1.7.23'
     Description: The version of containerd to install
     Type: String
   EnableEfa:
@@ -62,7 +62,7 @@ Parameters:
     Description: The Kubernetes version of the worker nodes
     Type: String
   NerdctlUrl:
-    Default: 'https://api.github.com/repos/containerd/nerdctl/releases/latest'
+    Default: 'https://api.github.com/repos/containerd/nerdctl/releases'
     Description: The URL for the nerdctl install
     Type: String
   NerdctlVersion:
