@@ -48,7 +48,7 @@ Parameters:
     Type: String
   GithubS3BucketName:
     Default: ''
-    Description: The S3 bucket where the EKS binaries are hosted
+    Description: The S3 bucket where the amazon-eks-ami-rhel tar file can be stored.
     Type: String
   HomePath:
     Default: '/home/ec2-user'
