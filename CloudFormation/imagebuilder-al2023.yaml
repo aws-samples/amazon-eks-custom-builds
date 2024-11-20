@@ -11,7 +11,7 @@ Parameters:
     Description: The AWS region where the EKS binary S3 bucket resides
     Type: String
   ContainerdVersion:
-    Default: '1.7.11-*'
+    Default: '1.7.*'
     Description: The version of containerd to install
     Type: String
   EnableAccelerator:
@@ -50,12 +50,16 @@ Parameters:
       - '1.28'
       - '1.29'
       - '1.30'
-    Default: '1.28'
+    Default: '1.30'
     Description: The Kubernetes version of the worker nodes
     Type: String
   NodeAdmBuildImage:
     Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
     Description: The version of the nodeadmin build image to install
+    Type: String
+  NvidiaDriverMajorVersion:
+    Default: '560'
+    Description: The Nvidia driver version to use
     Type: String
   RuncVersion:
     Default: '*'
@@ -75,7 +79,6 @@ Parameters:
     Type: String
 
 Resources:
-
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -160,6 +163,9 @@ Resources:
         description: Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
+          - AWSRegion:
+              type: string
+              value: '${AWS::Region}'
           - KubernetesVersion:
               type: string
               value: '${KubernetesVersion}'
@@ -181,6 +187,9 @@ Resources:
           - NodeAdmBuildImage:
               type: string
               value: '${NodeAdmBuildImage}'
+          - NvidiaDriverMajorVersion:
+              type: string
+              value: '${NvidiaDriverMajorVersion}'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
@@ -246,7 +255,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
+                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/limit-c-states.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200

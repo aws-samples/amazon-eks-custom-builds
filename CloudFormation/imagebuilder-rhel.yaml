@@ -58,7 +58,7 @@ Parameters:
       - '1.28'
       - '1.29'
       - '1.30'
-    Default: '1.28'
+    Default: '1.30'
     Description: The Kubernetes version of the worker nodes
     Type: String
   NerdctlUrl:
@@ -94,8 +94,8 @@ Conditions:
     'Fn::Equals':
       - Ref: EnableStig
       - true
-Resources:
 
+Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
     Properties:
