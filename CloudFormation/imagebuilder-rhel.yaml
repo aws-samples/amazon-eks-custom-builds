@@ -73,6 +73,10 @@ Parameters:
     Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
     Description: The version of the nodeadmin build image to install
     Type: String
+  PauseContainerImage:
+    Default: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
+    Description: The pause container image to use
+    Type: String
   RuncVersion:
     Default: '*'
     Description: The version of runc to install
@@ -216,6 +220,9 @@ Resources:
           - NodeAdmBuildImage:
               type: string
               value: '${NodeAdmBuildImage}'
+          - PauseContainerImage:
+              type: String
+              value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
@@ -297,7 +304,15 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+                    - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+              - name: CachePauseContainer
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
               - name: InstallEFA
                 action: ExecuteBash
                 timeoutSeconds: 1200
