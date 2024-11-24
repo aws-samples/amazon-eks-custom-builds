@@ -217,7 +217,7 @@ Resources:
               value: '${NvidiaDriverMajorVersion}'
           - PauseContainerImage:
               type: String
-              value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
+              value: '${PauseContainerImage}'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
