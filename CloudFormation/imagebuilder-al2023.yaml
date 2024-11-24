@@ -146,6 +146,27 @@ Resources:
       Roles: 
         - !Ref ImageBuilderRole
 
+  ImageBuilderECRIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Resource: 
+              - !Sub 'arn:${AWS::Partition}:ecr:${AWS::Region}:*:eks/pause'
+          - Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+      PolicyName: !Sub '${AWS::StackName}-ECRPolicy'
+      Roles: 
+        - !Ref ImageBuilderRole
+
   ImageBuilderInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
