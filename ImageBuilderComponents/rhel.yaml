@@ -7,7 +7,7 @@ constants:
       value: 'us-west-2'
   - KubernetesVersion:
       type: string
-      value: '1.28'
+      value: '1.30'
   - GithubRepoUrl:
       type: string
       value: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
@@ -38,6 +38,9 @@ constants:
   - NodeAdmBuildImage:
       type: string
       value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+  - PauseContainerImage:
+      type: string
+      value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
   - RuncVersion:
       type: string
       value: '*'
@@ -119,7 +122,15 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+      - name: CachePauseContainer
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
       - name: InstallEFA
         action: ExecuteBash
         timeoutSeconds: 1200

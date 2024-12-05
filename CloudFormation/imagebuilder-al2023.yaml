@@ -11,7 +11,7 @@ Parameters:
     Description: The AWS region where the EKS binary S3 bucket resides
     Type: String
   ContainerdVersion:
-    Default: '1.7.11-*'
+    Default: '1.7.*'
     Description: The version of containerd to install
     Type: String
   EnableAccelerator:
@@ -50,12 +50,20 @@ Parameters:
       - '1.28'
       - '1.29'
       - '1.30'
-    Default: '1.28'
+    Default: '1.30'
     Description: The Kubernetes version of the worker nodes
     Type: String
   NodeAdmBuildImage:
     Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
     Description: The version of the nodeadmin build image to install
+    Type: String
+  NvidiaDriverMajorVersion:
+    Default: '560'
+    Description: The Nvidia driver version to use
+    Type: String
+  PauseContainerImage:
+    Default: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
+    Description: The pause container image to use
     Type: String
   RuncVersion:
     Default: '*'
@@ -74,8 +82,81 @@ Parameters:
     Description: The working directory of the install script
     Type: String
 
-Resources:
+Mappings:
+  RegionMap:
+    af-south-1:
+      AccountId: "877085696533"
+    ap-east-1:
+      AccountId: "800184023465"
+    ap-northeast-1:
+      AccountId: "602401143452"
+    ap-northeast-2:
+      AccountId: "602401143452"
+    ap-northeast-3:
+      AccountId: "602401143452"
+    ap-south-1:
+      AccountId: "602401143452"
+    ap-south-2:
+      AccountId: "900889452093"
+    ap-southeast-1:
+      AccountId: "602401143452"
+    ap-southeast-2:
+      AccountId: "602401143452"
+    ap-southeast-3:
+      AccountId: "296578399912"
+    ap-southeast-4:
+      AccountId: "491585149902"
+    ca-central-1:
+      AccountId: "602401143452"
+    ca-west-1:
+      AccountId: "761377655185"
+    cn-north-1:
+      AccountId: "918309763551"
+    cn-northwest-1:
+      AccountId: "961992271922"
+    eu-central-1:
+      AccountId: "602401143452"
+    eu-central-2:
+      AccountId: "900612956339"
+    eu-north-1:
+      AccountId: "602401143452"
+    eu-south-1:
+      AccountId: "590381155156"
+    eu-south-2:
+      AccountId: "455263428931"
+    eu-west-1:
+      AccountId: "602401143452"
+    eu-west-2:
+      AccountId: "602401143452"
+    eu-west-3:
+      AccountId: "602401143452"
+    il-central-1:
+      AccountId: "066635153087"
+    me-south-1:
+      AccountId: "558608220178"
+    me-central-1:
+      AccountId: "759879836304"
+    sa-east-1:
+      AccountId: "602401143452"
+    us-east-1:
+      AccountId: "602401143452"
+    us-east-2:
+      AccountId: "602401143452"
+    us-gov-east-1:
+      AccountId: "151742754352"
+    us-gov-west-1:
+      AccountId: "013241004608"
+    us-west-1:
+      AccountId: "602401143452"
+    us-west-2:
+      AccountId: "602401143452"
 
+Conditions:
+  IsChina: !Or 
+    - !Equals [!Ref 'AWS::Region', 'cn-north-1']
+    - !Equals [!Ref 'AWS::Region', 'cn-northwest-1']
+
+Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -139,6 +220,29 @@ Resources:
       Roles: 
         - !Ref ImageBuilderRole
 
+  ImageBuilderECRIAMPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Resource:
+              - !Sub 
+                - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
+                - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
+          - Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+      PolicyName: !Sub '${AWS::StackName}-ECRPolicy'
+      Roles: 
+        - !Ref ImageBuilderRole
+
   ImageBuilderInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
     Properties:
@@ -160,6 +264,9 @@ Resources:
         description: Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
+          - AWSRegion:
+              type: string
+              value: '${AWS::Region}'
           - KubernetesVersion:
               type: string
               value: '${KubernetesVersion}'
@@ -181,6 +288,12 @@ Resources:
           - NodeAdmBuildImage:
               type: string
               value: '${NodeAdmBuildImage}'
+          - NvidiaDriverMajorVersion:
+              type: string
+              value: '${NvidiaDriverMajorVersion}'
+          - PauseContainerImage:
+              type: String
+              value: '${PauseContainerImage}'
           - RuncVersion:
               type: string
               value: '${RuncVersion}'
@@ -246,7 +359,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
+                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/limit-c-states.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -265,7 +378,15 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+                    - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+              - name: CachePauseContainer
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/cache-pause-container.sh
               - name: InstallNeuronDriver
                 action: ExecuteBash
                 timeoutSeconds: 1200
