@@ -62,7 +62,7 @@ Parameters:
       - '1.28'
       - '1.29'
       - '1.30'
-    Default: '1.28'
+    Default: '1.30'
     Description: The Kubernetes version of the worker nodes
     Type: String
   PauseContainerVersion:
@@ -91,7 +91,6 @@ Parameters:
     Type: String
 
 Resources:
-
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -167,7 +166,7 @@ Resources:
       Name: !Sub '${AWS::StackName}-component'
       Description: !Sub 'Amazon Linux 2 EKS worker node installation component.'
       Platform: 'Linux'
-      Version: !Sub '${KubernetesVersion}'
+      Version: !Sub '${KubernetesVersion}.0'
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
         - 'Amazon Linux 2'

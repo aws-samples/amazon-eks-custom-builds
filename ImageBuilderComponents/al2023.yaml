@@ -2,9 +2,12 @@ name: Amazon EKS Optimized Amazon Linux 2023 AMI
 description: Installs Amazon EKS-optimized Amazon Linux 2023 artifacts for Amazon EKS.
 schemaVersion: 1.0
 constants:
+  - AWSRegion:
+      type: string
+      value: 'us-west-2'
   - KubernetesVersion:
       type: string
-      value: '1.28'
+      value: '1.30'
   - GithubRepoUrl:
       type: string
       value: 'https://github.com/awslabs/amazon-eks-ami.git'
@@ -19,13 +22,16 @@ constants:
       value: 'us-west-2'
   - ContainerdVersion:
       type: string
-      value: '1.7.11-*'
+      value: '1.7.*'
   - NodeAdmBuildImage:
       type: string
       value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
   - NvidiaDriverMajorVersion:
       type: string
       value: '560'
+  - PauseContainerImage:
+      type: string
+      value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
   - RuncVersion:
       type: string
       value: '*'
@@ -110,7 +116,15 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - BUILD_IMAGE={{ NodeAdmBuildImage }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+      - name: CachePauseContainer
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/cache-pause-container.sh
       - name: InstallNeuronDriver
         action: ExecuteBash
         timeoutSeconds: 1200
