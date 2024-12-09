@@ -184,8 +184,7 @@ Mappings:
       AccountId: "602401143452"
 
 Conditions:
-  
-  : !Or 
+  IsChina: !Or 
     - !Equals [!Ref 'AWS::Region', 'cn-north-1']
     - !Equals [!Ref 'AWS::Region', 'cn-northwest-1']
   CheckStig:
