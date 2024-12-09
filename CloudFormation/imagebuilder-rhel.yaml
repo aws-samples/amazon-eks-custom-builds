@@ -113,6 +113,10 @@ Parameters:
     Default: 'worker'
     Description: The working directory of the install script
     Type: String
+  OptionalAccountId:
+    Type: String
+    Default: ''
+    Description: 'Optional account ID for regions not in the RegionMap'
 
 Mappings:
   RegionMap:
@@ -194,6 +198,7 @@ Conditions:
   UseCustomSubnetId: !Not [!Equals [!Ref SubnetId, '']]
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
+  UseOptionalAccountId: !Not [!Equals [!Ref OptionalAccountId, '']]
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -280,7 +285,10 @@ Resources:
             Resource:
               - !Sub 
                 - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
-                - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
+                - AccountId: !If 
+                    - UseOptionalAccountId
+                    - !Ref OptionalAccountId
+                    - !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
           - Effect: Allow
             Action:
               - ecr:GetAuthorizationToken
