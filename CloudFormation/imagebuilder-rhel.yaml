@@ -34,6 +34,10 @@ Parameters:
     Default: 'false'
     Description: Whether or not to enable STIG image component
     Type: String
+  AWSCliUrl:
+    Default: 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip'
+    Description: The location of the AWS ClI zip.
+    Type: String
   GithubDir:
     Default: 'amazon-eks-ami-rhel'
     Description: The local relative directory name of the Github Repository
@@ -42,9 +46,25 @@ Parameters:
     Default: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
     Description: The Github Repository URL for downloading the install script and files
     Type: String
+  GithubS3BucketName:
+    Default: ''
+    Description: The S3 bucket where the amazon-eks-ami-rhel tar file can be stored.
+    Type: String
   HomePath:
     Default: '/home/ec2-user'
     Description: The home directory of the user executing the install script
+    Type: String
+  TerminateInstanceOnFailure:
+    Default: true
+    Description: Specify whether to terminate the instance on failure
+    Type: String
+  SecurityGroupId:
+    Default: ''
+    Description: ID of the Security Group to associate with the infrastructure configuration
+    Type: String
+  SubnetId:
+    Default: ''
+    Description: ID of the Subnet to use for the infrastructure configuration
     Type: String
   KubernetesVersion:
     AllowedValues:
@@ -93,6 +113,10 @@ Parameters:
     Default: 'worker'
     Description: The working directory of the install script
     Type: String
+  OptionalAccountId:
+    Type: String
+    Default: ''
+    Description: 'Optional account ID for regions not in the RegionMap'
 
 Mappings:
   RegionMap:
@@ -171,7 +195,10 @@ Conditions:
     'Fn::Equals':
       - Ref: EnableStig
       - true
-
+  UseCustomSubnetId: !Not [!Equals [!Ref SubnetId, '']]
+  UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
+  HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
+  UseOptionalAccountId: !Not [!Equals [!Ref OptionalAccountId, '']]
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -232,6 +259,14 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:s3:::${BinaryBucketName}/*'
               - !Sub 'arn:${AWS::Partition}:s3:::${BinaryBucketName}'
+              - 'Fn::If':
+                - HasGithubS3Bucket
+                - !Sub 'arn:${AWS::Partition}:s3:::${GithubS3BucketName}'
+                - !Ref 'AWS::NoValue'
+              - 'Fn::If':
+                - HasGithubS3Bucket
+                - !Sub 'arn:${AWS::Partition}:s3:::${GithubS3BucketName}/*'
+                - !Ref 'AWS::NoValue'
       PolicyName: !Sub '${AWS::StackName}-S3Policy'
       Roles: 
         - !Ref ImageBuilderRole
@@ -250,7 +285,10 @@ Resources:
             Resource:
               - !Sub 
                 - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
-                - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
+                - AccountId: !If 
+                    - UseOptionalAccountId
+                    - !Ref OptionalAccountId
+                    - !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
           - Effect: Allow
             Action:
               - ecr:GetAuthorizationToken
@@ -337,6 +375,9 @@ Resources:
           - EnableFips:
               type: string
               value: '${EnableFips}'
+          - AWSCliUrl:
+              type: string
+              value: '${AWSCliUrl}'
           - SSMAgentVersion:
               type: string
               value: '${SSMAgentVersion}'
@@ -350,9 +391,15 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - yum install -y git
                     - cd {{ HomePath }}
-                    - git clone {{ GithubRepoUrl }}
+                    - |
+                      if [[ "{{ GithubRepoUrl }}" == s3://* ]]; then
+                        aws s3 cp {{ GithubRepoUrl }} .
+                        tar -xzvf $(basename {{ GithubRepoUrl }})
+                      else
+                        yum install -y git
+                        git clone {{ GithubRepoUrl }}
+                      fi
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
@@ -392,7 +439,7 @@ Resources:
                     - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }})
                     - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
                     - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
-                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
+                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} AWSCLI_URL={{ AWSCliUrl }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
               - name: InstallNodeAdm
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -472,7 +519,10 @@ Resources:
       InstanceProfileName: !Ref ImageBuilderInstanceProfile
       Logging: 
         S3Logs: {}
-      TerminateInstanceOnFailure: true
+      TerminateInstanceOnFailure: !Ref TerminateInstanceOnFailure
+      SubnetId: !If [ UseCustomSubnetId, !Ref SubnetId , !Ref 'AWS::NoValue' ]
+      SecurityGroupIds:
+        - !If [ UseCustomSecurityGroupId, !Ref SecurityGroupId , !Ref 'AWS::NoValue' ]
 
   ImageBuilderImagePipeline:
     Type: 'AWS::ImageBuilder::ImagePipeline'
