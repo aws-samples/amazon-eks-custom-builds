@@ -207,9 +207,11 @@ Conditions:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
       - 'true'
-  HasRegionMapping: !Contains 
-    - !Select [0, !Split [',', !Join [',', !GetAtt RegionMap.Keys]]]
-    - !Ref 'AWS::Region'
+  HasRegionMapping: 
+    'Fn::Not':
+      - 'Fn::Equals':
+        - 'Fn::FindInMap': [RegionMap, !Ref 'AWS::Region', AccountId]
+        - ''
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -396,6 +398,9 @@ Resources:
           - SSMAgentVersion:
               type: string
               value: '${SSMAgentVersion}'
+          - EnableAwsCliComponent:
+              type: string
+              value: '${EnableAwsCliComponent}'
         phases:
           - name: build
             steps:
@@ -460,7 +465,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }}) {{ BinaryBucketRegion }}
+                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{ BinaryBucketRegion }} {{ BinaryBucketName }} )
                     - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
                     - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
                     - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} AWSCLI_URL={{ AWSCliUrl }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
