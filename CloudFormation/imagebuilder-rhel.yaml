@@ -113,10 +113,6 @@ Parameters:
     Default: 'worker'
     Description: The working directory of the install script
     Type: String
-  OptionalAccountId:
-    Type: String
-    Default: ''
-    Description: 'Optional account ID for regions not in the RegionMap'
   EnableAwsCliComponent:
     Default: 'true'
     Description: Whether or not to enable AWS CLI component installation
@@ -202,16 +198,10 @@ Conditions:
   UseCustomSubnetId: !Not [!Equals [!Ref SubnetId, '']]
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
-  UseOptionalAccountId: !Not [!Equals [!Ref OptionalAccountId, '']]
   IsAwsCliComponentEnabled:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
       - 'true'
-  HasRegionMapping: 
-    'Fn::Not':
-      - 'Fn::Equals':
-        - 'Fn::FindInMap': [RegionMap, !Ref 'AWS::Region', AccountId]
-        - ''
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -298,13 +288,7 @@ Resources:
               Resource:
                 - !Sub 
                   - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
-                  - AccountId: !If 
-                      - UseOptionalAccountId
-                      - !Ref OptionalAccountId
-                      - !If
-                        - HasRegionMapping
-                        - !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
-                        - !Ref OptionalAccountId
+                  - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
             - Effect: Allow
               Action:
                 - ecr:GetAuthorizationToken
@@ -312,7 +296,6 @@ Resources:
         PolicyName: !Sub '${AWS::StackName}-ECRPolicy'
         Roles: 
           - !Ref ImageBuilderRole
-
 
   ImageBuilderInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -416,12 +399,15 @@ Resources:
                       if [[ "{{ GithubRepoUrl }}" == s3://* ]]; then
                         # We need the awscli earlier so we can pull the repo from S3.
                         if [ "{{ EnableAwsCliComponent }}" = "false" ]; then
+
+                          export CURL_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+                          export REQUESTS_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
                           
                           dnf install unzip -y
                           curl "{{ AWSCliUrl }}" -o "awscliv2.zip"
 
                           unzip awscliv2.zip
-                          sudo ./aws/install --bin-dir /bin/ --update
+                          sudo ./aws/install --bin-dir /usr/local/sbin --update
                         fi
                         aws s3 cp --region {{ AWSRegion }} {{ GithubRepoUrl }} .
                         tar -xzvf $(basename {{ GithubRepoUrl }})
@@ -465,10 +451,16 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{ BinaryBucketRegion }} {{ BinaryBucketName }} )
-                    - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
-                    - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
-                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} AWSCLI_URL={{ AWSCliUrl }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
+                    - |
+                      echo "Executing latest-binaries.sh..."
+                      if ! KUBERNETES_VERSION_AND_BUILD_DATE=$(bash "{{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh" "{{ KubernetesVersion }}" "{{ BinaryBucketRegion }}" "{{ BinaryBucketName }}" 2>&1); then
+                          echo "Error: latest-binaries.sh failed with output: $KUBERNETES_VERSION_AND_BUILD_DATE"
+                          exit 1
+                      fi
+                      echo "latest-binaries.sh output: $KUBERNETES_VERSION_AND_BUILD_DATE"
+                      KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
+                      KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
+                      KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} AWSCLI_URL={{ AWSCliUrl }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
               - name: InstallNodeAdm
                 action: ExecuteBash
                 timeoutSeconds: 1200
