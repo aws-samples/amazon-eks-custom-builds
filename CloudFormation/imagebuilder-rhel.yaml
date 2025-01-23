@@ -400,8 +400,8 @@ Resources:
                         # We need the awscli earlier so we can pull the repo from S3.
                         if [ "{{ EnableAwsCliComponent }}" = "false" ]; then
 
-                          export CURL_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
-                          export REQUESTS_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
+                          export AWS_DEFAULT_REGION="{{ AWSRegion }}""
+                          export AWS_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
                           
                           dnf install unzip -y
                           curl "{{ AWSCliUrl }}" -o "awscliv2.zip"
