@@ -275,27 +275,27 @@ Resources:
         - !Ref ImageBuilderRole
 
   ImageBuilderECRIAMPolicy:
-      Type: AWS::IAM::Policy
-      Properties:
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - ecr:GetDownloadUrlForLayer
-                - ecr:BatchGetImage
-                - ecr:BatchCheckLayerAvailability
-              Resource:
-                - !Sub 
-                  - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
-                  - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
-            - Effect: Allow
-              Action:
-                - ecr:GetAuthorizationToken
-              Resource: '*'
-        PolicyName: !Sub '${AWS::StackName}-ECRPolicy'
-        Roles: 
-          - !Ref ImageBuilderRole
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:BatchCheckLayerAvailability
+            Resource:
+              - !Sub 
+                - 'arn:${AWS::Partition}:ecr:${AWS::Region}:${AccountId}:*'
+                - AccountId: !FindInMap [RegionMap, !Ref 'AWS::Region', AccountId]
+          - Effect: Allow
+            Action:
+              - ecr:GetAuthorizationToken
+            Resource: '*'
+      PolicyName: !Sub '${AWS::StackName}-ECRPolicy'
+      Roles: 
+        - !Ref ImageBuilderRole
 
   ImageBuilderInstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -400,7 +400,7 @@ Resources:
                         # We need the awscli earlier so we can pull the repo from S3.
                         if [ "{{ EnableAwsCliComponent }}" = "false" ]; then
 
-                          export AWS_DEFAULT_REGION="{{ AWSRegion }}""
+                          export AWS_DEFAULT_REGION="{{ AWSRegion }}"
                           export AWS_CA_BUNDLE="/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem"
                           
                           dnf install unzip -y
