@@ -454,7 +454,7 @@ Resources:
                   commands:
                     - |
                       echo "Executing latest-binaries.sh..."
-                      if ! KUBERNETES_VERSION_AND_BUILD_DATE=$(bash "{{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh" "{{ KubernetesVersion }}" "{{ BinaryBucketRegion }}" "{{ BinaryBucketName }}" 2>&1); then
+                      if ! KUBERNETES_VERSION_AND_BUILD_DATE=$(bash "{{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh" "{{ KubernetesVersion }} {{AWSRegion}} {{ BinaryBucketRegion }} {{ BinaryBucketName }})" 2>&1); then
                           echo "Error: latest-binaries.sh failed with output: $KUBERNETES_VERSION_AND_BUILD_DATE"
                           exit 1
                       fi
