@@ -62,7 +62,8 @@ Parameters:
       - '1.28'
       - '1.29'
       - '1.30'
-    Default: '1.30'
+      - '1.31'
+    Default: '1.31'
     Description: The Kubernetes version of the worker nodes
     Type: String
   PauseContainerVersion:
@@ -175,6 +176,9 @@ Resources:
         description: Installs Amazon EKS-optimized AL2 artifacts for Amazon EKS version ${KubernetesVersion}.
         schemaVersion: 1.0
         constants:
+          - AWSRegion:
+              type: string
+              value: '${AWS::Region}'
           - KubernetesVersion:
               type: string
               value: '${KubernetesVersion}'
@@ -275,11 +279,11 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }})
+                    - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{AWSRegion}} {{ BinaryBucketRegion }} {{ BinaryBucketName }})
                     - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
                     - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
                     - if [ "{{ KernelVersion }}" != "none" ]; then KUBERNETES_VERSION=$KUBERNETES_VERSION KERNEL_VERSION={{ KernelVersion }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/upgrade-kernel.sh; fi
-                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} RUNC_VERSION={{ RuncVersion }} DOCKER_VERSION={{ DockerVersion }} CNI_PLUGIN_VERSION={{ CNIPluginVersion }} PULL_CNI_FROM_GITHUB={{ PullCNIFromGithub }} PAUSE_CONTAINER_VERSION={{ PauseContainerVersion }} CACHE_CONTAINER_IMAGES={{ CacheContainerImages }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/install-worker.sh
+                    - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} RUNC_VERSION={{ RuncVersion }} DOCKER_VERSION={{ DockerVersion }} CNI_PLUGIN_VERSION={{ CNIPluginVersion }} PULL_CNI_FROM_GITHUB={{ PullCNIFromGithub }} PAUSE_CONTAINER_VERSION={{ PauseContainerVersion }} CACHE_CONTAINER_IMAGES={{ CacheContainerImages }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= bash {{ HomePath }}/{{ GithubDir }}/templates/al2/provisioners/install-worker.sh
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200
