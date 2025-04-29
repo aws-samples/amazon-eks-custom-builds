@@ -22,6 +22,10 @@ Parameters:
     Default: '1.7.23'
     Description: The version of containerd to install
     Type: String
+  EnableAccelerator:
+    Default: 'none'
+    Description: AWS Inferentia accelerator drivers to install
+    Type: String
   EnableEfa:
     Default: 'false'
     Description: Whether or not to enable Elastic Fabric Adapter
@@ -118,6 +122,14 @@ Parameters:
     Default: 'true'
     Description: Whether or not to enable AWS CLI component installation
     Type: String
+  S3UrlNvidiaRpms:
+    Type: String
+    Description: The S3 URL for NVIDIA RPMs (optional)
+    Default: "none"
+  RetainNvidiaRPM:
+    Type: String
+    Description: The S3 URL for NVIDIA RPMs (optional)
+    Default: "false"
 
 Mappings:
   RegionMap:
@@ -199,6 +211,7 @@ Conditions:
   UseCustomSubnetId: !Not [!Equals [!Ref SubnetId, '']]
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
+  HasNvidiaS3Url: !Not [!Equals [!Ref S3UrlNvidiaRpms, 'none']]
   IsAwsCliComponentEnabled:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
@@ -370,6 +383,9 @@ Resources:
           - HomePath:
               type: string
               value: '${HomePath}'
+          - EnableAccelerator:
+              type: string
+              value: '${EnableAccelerator}'
           - EnableEfa:
               type: string
               value: '${EnableEfa}'
@@ -385,6 +401,12 @@ Resources:
           - EnableAwsCliComponent:
               type: string
               value: '${EnableAwsCliComponent}'
+          - S3UrlNvidiaRpms:
+              type: string
+              value: '${S3UrlNvidiaRpms}'
+          - RetainNvidiaRPM:
+              type: string
+              value: '${RetainNvidiaRPM}'
         phases:
           - name: build
             steps:
@@ -472,6 +494,16 @@ Resources:
                 inputs:
                   commands:
                     - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
+              - name: InstallNvidiaDriver
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - S3URL="{{ S3UrlNvidiaRpms }}"
+                    - if [ "$S3URL" = "none" ]; then S3URL=""; fi
+                    - AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
               - name: InstallEFA
                 action: ExecuteBash
                 timeoutSeconds: 1200
