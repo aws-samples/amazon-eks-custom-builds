@@ -199,6 +199,19 @@ Mappings:
       AccountId: "602401143452"
     us-west-2:
       AccountId: "602401143452"
+    us-iso-east-1:
+      AccountId: "725322719131"
+    us-isob-east-1:
+      AccountId: "187977181151"
+    us-iso-west-1:
+      AccountId: "608367168043"
+    us-isof-south-1:
+      AccountId: "676585237158"
+    us-isof-east-1:
+      AccountId: "171035529773"
+    eu-isoe-west-1:
+      AccountId: "249663109785"
+    
 
 Conditions:
   IsChina: !Or 
