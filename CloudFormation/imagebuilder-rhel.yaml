@@ -38,6 +38,14 @@ Parameters:
     Default: 'false'
     Description: Whether or not to enable STIG image component
     Type: String
+  RootVolumeSize:
+    Type: Number
+    Default: 50
+    Description: Size in GB for the root volume
+  EnableStigPartition:
+    Default: 'false'
+    Description: Whether or not to enable STIG partitioning
+    Type: String
   AWSCliUrl:
     Default: 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip'
     Description: The location of the AWS ClI zip.
@@ -130,7 +138,10 @@ Parameters:
     Type: String
     Description: The S3 URL for NVIDIA RPMs (optional)
     Default: "false"
-
+  AdditionalComponents:
+    Type: String
+    Default: ''
+    Description: 'Comma-separated list of additional Image Builder component ARNs to include'
 Mappings:
   RegionMap:
     af-south-1:
@@ -225,10 +236,15 @@ Conditions:
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
   HasNvidiaS3Url: !Not [!Equals [!Ref S3UrlNvidiaRpms, 'none']]
+  EnableStigPartition: 
+    'Fn::Equals':
+      - Ref: EnableStigPartition
+      - 'true'
   IsAwsCliComponentEnabled:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
       - 'true'
+  HasAdditionalComponents: !Not [!Equals [!Ref AdditionalComponents, '']]
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -340,6 +356,7 @@ Resources:
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
           - 'Red Hat Enterprise Linux 8'
+          - 'Red Hat Enterprise Linux 9'
       Data: !Sub |
         name: Amazon EKS Optimized RHEL AMI
         description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}.
@@ -405,6 +422,9 @@ Resources:
           - EnableFips:
               type: string
               value: '${EnableFips}'
+          - EnableStigPartition:
+              type: string
+              value: '${EnableStigPartition}'
           - AWSCliUrl:
               type: string
               value: '${AWSCliUrl}'
@@ -525,19 +545,133 @@ Resources:
                 inputs:
                   commands:
                     - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
-              - name: Cleanup
+              - name: EnableStigPartition
                 action: ExecuteBash
                 timeoutSeconds: 1200
                 onFailure: Abort
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
-                    - sudo rm -rf {{ HomePath }}/*
-                    - sudo rm -rf {{ TempPath }}/provisioners
-                    - sudo rm -rf {{ TempPath }}/hack
-                    - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+                    - |
+                      if [ "{{ EnableStigPartition }}" = "true" ]; then
+                        echo "Starting STIG Partition step:"
+                        dnf install rsync -y
+                        dnf install lvm2 -y
+                        dnf install nvme-cli -y
+
+                        # Get total disk size in sectors
+                        total_sectors=$(blockdev --getsz /dev/nvme0n1)
+                        echo "Total sectors: ${!total_sectors}"
+
+                        # Calculate 33% of disk size for root partition (in sectors)
+                        root_size=$((total_sectors * 33 / 100))
+                        echo "Root size in sectors: ${!root_size}"
+
+                        # Convert to GB for fdisk (assuming 512-byte sectors)
+                        root_size_gb=$((root_size * 512 / 1024 / 1024 / 1024))
+                        echo "Root size in GB: ${!root_size_gb}"
+
+                        # Recreate partitions using GB size
+                        echo -e "d\\n3\\nn\\n3\\n\\n+${!root_size_gb}G\\nw\\ny" | fdisk /dev/nvme0n1
+
+                        partprobe /dev/nvme0n1
+                        xfs_growfs /
+                        echo -e "n\\n4\\n\\n\\nw\\ny" | fdisk /dev/nvme0n1
+                        partprobe /dev/nvme0n1p4
+                        
+                        # Create mount point directories
+                        mkdir -p /mnt/var
+                        mkdir -p /mnt/varlog
+                        mkdir -p /mnt/varlogaudit
+                        mkdir -p /mnt/tmp
+                        mkdir -p /mnt/vartmp
+                        mkdir -p /mnt/home         
+                        
+                        # Set up LVM on the new partition
+                        pvcreate /dev/nvme0n1p4
+                        vgcreate vg_data /dev/nvme0n1p4
+
+                        echo "Creating Logical Volumes"
+                        lvcreate -l 39%VG -n lv_var vg_data
+                        lvcreate -l 8%VG -n lv_varlog vg_data
+                        lvcreate -l 8%VG -n lv_varlogaudit vg_data
+                        lvcreate -l 8%VG -n lv_tmp vg_data
+                        lvcreate -l 8%VG -n lv_vartmp vg_data
+                        lvcreate -l 8%VG -n lv_home vg_data
+                        echo "Creating Swap LV"
+                        lvcreate -l 100%FREE -n lv_swap vg_data
+                        
+                        echo "Creating File Systems"
+                        mkfs.xfs /dev/vg_data/lv_var
+                        mkfs.xfs /dev/vg_data/lv_varlog
+                        mkfs.xfs /dev/vg_data/lv_varlogaudit
+                        mkfs.xfs /dev/vg_data/lv_tmp
+                        mkfs.xfs /dev/vg_data/lv_vartmp
+                        mkfs.xfs /dev/vg_data/lv_home
+
+                        echo "Setting Swap"
+                        mkswap /dev/vg_data/lv_swap
+
+                        echo "LV Status after swap creation:"
+                        lvs
+                        
+                        echo "Mount temporarily and copy data"
+                        mount /dev/vg_data/lv_var /mnt/var
+                        mount /dev/vg_data/lv_varlog /mnt/varlog
+                        mount /dev/vg_data/lv_varlogaudit /mnt/varlogaudit
+                        mount /dev/vg_data/lv_tmp /mnt/tmp
+                        mount /dev/vg_data/lv_vartmp /mnt/vartmp
+                        mount /dev/vg_data/lv_home /mnt/home
+                        
+                        # Copy data
+                        rsync -aqxPAX /var/* /mnt/var/
+                        rsync -aqxPAX /var/log/* /mnt/varlog/
+                        rsync -aqxPAX /var/log/audit/* /mnt/varlogaudit/
+                        rsync -aqxPAX /tmp/* /mnt/tmp/
+                        rsync -aqxPAX /var/tmp/* /mnt/vartmp/
+                        rsync -aqxPAX /home/* /mnt/home/
+                        
+                        # Unmount temporary locations
+                        umount /mnt/var
+                        umount /mnt/varlog
+                        umount /mnt/varlogaudit
+                        umount /mnt/tmp
+                        umount /mnt/vartmp
+                        umount /mnt/home
+                        
+                        # Create target directories if they don't exist
+                        mkdir -p /var
+                        mkdir -p /var/log
+                        mkdir -p /var/log/audit
+                        mkdir -p /tmp
+                        mkdir -p /var/tmp
+                        mkdir -p /home
+                        
+                        # Add to fstab using LVM paths
+                        echo "/dev/mapper/vg_data-lv_var /var xfs defaults,nofail 0 2" >> /etc/fstab
+                        echo "/dev/mapper/vg_data-lv_varlog /var/log xfs defaults,nofail 0 2" >> /etc/fstab
+                        echo "/dev/mapper/vg_data-lv_varlogaudit /var/log/audit xfs defaults,nofail 0 0" >> /etc/fstab
+                        echo "/dev/mapper/vg_data-lv_tmp /tmp xfs defaults,nofail,noexec 0 0" >> /etc/fstab
+                        echo "/dev/mapper/vg_data-lv_vartmp /var/tmp xfs defaults,nofail,noexec 0 0" >> /etc/fstab
+                        echo "/dev/mapper/vg_data-lv_home /home xfs defaults,nofail 0 2" >> /etc/fstab
+                        
+                        # Mount all
+                        mount -a
+                        echo "STIG partitioning complete."
+                      fi
+              # - name: Cleanup
+              #   action: ExecuteBash
+              #   timeoutSeconds: 1200
+              #   onFailure: Abort
+              #   maxAttempts: 1
+              #   inputs:
+              #     commands:
+              #       - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+              #       - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
+              #       - sudo rm -rf {{ HomePath }}/*
+              #       - sudo rm -rf {{ TempPath }}/provisioners
+              #       - sudo rm -rf {{ TempPath }}/hack
+              #       - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
@@ -555,17 +689,38 @@ Resources:
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux-high/x.x.x'
           - !Ref 'AWS::NoValue'
         - ComponentArn: !Ref ImageBuilderComponent
+        - !If
+            - HasAdditionalComponents
+            - { ComponentArn: !Ref AdditionalComponents }
+            - !Ref 'AWS::NoValue'
+      WorkingDirectory: !If
+        - EnableStigPartition
+        - '/opt'
+        - !Ref 'AWS::NoValue'
+
       ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
+      AdditionalInstanceConfiguration: !If
+        - EnableStigPartition
+        - UserDataOverride:
+            Fn::Base64:
+              Fn::Sub: |
+                #cloud-config
+                growpart:
+                  mode: off
+                resize_rootfs: false
+                runcmd:
+                  - sudo yum install -y https://s3.${AWS::Region}.${AWS::URLSuffix}/amazon-ssm-${AWS::Region}/latest/linux_amd64/amazon-ssm-agent.rpm
+          SystemsManagerAgent:
+            UninstallAfterBuild: false
+        - SystemsManagerAgent:
+            UninstallAfterBuild: false
       BlockDeviceMappings: 
         - DeviceName: '/dev/sda1'
           Ebs: 
             DeleteOnTermination: true
             Encrypted: false
-            VolumeSize: 50
+            VolumeSize: !Sub '${RootVolumeSize}'
             VolumeType: 'gp3'
-      AdditionalInstanceConfiguration:
-        SystemsManagerAgent:
-          UninstallAfterBuild: false
 
   ImageBuilderDistributionConfiguration:
     Type: 'AWS::ImageBuilder::DistributionConfiguration'
