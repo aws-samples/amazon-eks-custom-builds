@@ -6,6 +6,13 @@ Parameters:
     Default: 'amazon-eks'
     Description: The S3 bucket where the EKS binaries are hosted
     Type: String
+  RHELVersion:
+    Type: String
+    Default: '8'
+    AllowedValues:
+      - '8'
+      - '9'
+    Description: 'RHEL version to use (8 or 9)'
   BinaryBucketRegion:
     Default: 'us-west-2'
     Description: The AWS region where the EKS binary S3 bucket resides
@@ -527,16 +534,6 @@ Resources:
                 inputs:
                   commands:
                     - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
-              - name: InstallNvidiaDriver
-                action: ExecuteBash
-                timeoutSeconds: 1200
-                onFailure: Abort
-                maxAttempts: 1
-                inputs:
-                  commands:
-                    - S3URL="{{ S3UrlNvidiaRpms }}"
-                    - if [ "$S3URL" = "none" ]; then S3URL=""; fi
-                    - AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
               - name: InstallEFA
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -659,19 +656,58 @@ Resources:
                         mount -a
                         echo "STIG partitioning complete."
                       fi
-              # - name: Cleanup
-              #   action: ExecuteBash
-              #   timeoutSeconds: 1200
-              #   onFailure: Abort
-              #   maxAttempts: 1
-              #   inputs:
-              #     commands:
-              #       - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
-              #       - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
-              #       - sudo rm -rf {{ HomePath }}/*
-              #       - sudo rm -rf {{ TempPath }}/provisioners
-              #       - sudo rm -rf {{ TempPath }}/hack
-              #       - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+              - name: InstallNvidiaDriver
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - S3URL="{{ S3UrlNvidiaRpms }}"
+                    - if [ "$S3URL" = "none" ]; then S3URL=""; fi
+                    - AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
+  CleanupComponent:
+    Type: 'AWS::ImageBuilder::Component'
+    Properties:
+      Name: !Sub '${AWS::StackName}-cleanup'
+      Description: 'Cleanup component for RHEL EKS worker node'
+      Platform: 'Linux'
+      Version: '1.0.0'
+      Data: !Sub |
+        name: Cleanup
+        description: Performs cleanup operations
+        schemaVersion: 1.0
+        constants:
+          - HomePath:
+              type: string
+              value: '${HomePath}'
+          - GithubDir:
+              type: string
+              value: '${GithubDir}'
+          - TempPath:
+              type: string
+              value: '${TempPath}'
+          - WorkerDir:
+              type: string
+              value: '${WorkerDir}'
+        phases:
+          - name: build
+            steps:
+              - name: Cleanup
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Continue
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - echo "Starting cleanup process..."
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
+                    - sudo rm -rf {{ HomePath }}/*
+                    - sudo rm -rf {{ TempPath }}/provisioners
+                    - sudo rm -rf {{ TempPath }}/hack
+                    - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+                    - echo "Cleanup complete"
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
@@ -686,19 +722,20 @@ Resources:
           - !Ref 'AWS::NoValue'
         - 'Fn::If':
           - CheckStig
-          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux-high/x.x.x'
+          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component//stig-build-linux/x.x.x'
           - !Ref 'AWS::NoValue'
         - ComponentArn: !Ref ImageBuilderComponent
         - !If
             - HasAdditionalComponents
             - { ComponentArn: !Ref AdditionalComponents }
             - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref CleanupComponent
       WorkingDirectory: !If
         - EnableStigPartition
         - '/opt'
         - !Ref 'AWS::NoValue'
 
-      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
+      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-${RHELVersion}-x86/x.x.x'
       AdditionalInstanceConfiguration: !If
         - EnableStigPartition
         - UserDataOverride:
