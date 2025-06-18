@@ -243,6 +243,10 @@ Conditions:
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
   HasNvidiaS3Url: !Not [!Equals [!Ref S3UrlNvidiaRpms, 'none']]
+  IsStigEnabled:
+    'Fn::Equals':
+      - Ref: EnableStig
+      - 'true'
   EnableStigPartition: 
     'Fn::Equals':
       - Ref: EnableStigPartition
@@ -319,6 +323,14 @@ Resources:
               - 'Fn::If':
                 - HasGithubS3Bucket
                 - !Sub 'arn:${AWS::Partition}:s3:::${GithubS3BucketName}/*'
+                - !Ref 'AWS::NoValue'
+              - 'Fn::If':
+                - IsStigEnabled
+                - !Sub 'arn:${AWS::Partition}:s3:::aws-windows-downloads-${AWS::Region}/*'
+                - !Ref 'AWS::NoValue'
+              - 'Fn::If':
+                - IsStigEnabled
+                - !Sub 'arn:${AWS::Partition}:s3:::aws-windows-downloads-${AWS::Region}'
                 - !Ref 'AWS::NoValue'
       PolicyName: !Sub '${AWS::StackName}-S3Policy'
       Roles: 
@@ -429,6 +441,9 @@ Resources:
           - EnableFips:
               type: string
               value: '${EnableFips}'
+          - EnableStig:
+              type: string
+              value: '${EnableStig}'
           - EnableStigPartition:
               type: string
               value: '${EnableStigPartition}'
@@ -458,6 +473,16 @@ Resources:
                 inputs:
                   commands:
                     - cd {{ HomePath }}
+                    - |
+                      # Check and install tar if STIG is enabled
+                      # Currently the STIG component removes this.
+                      if [ "{{ EnableStig }}" = "true" ]; then
+                        echo "STIG is enabled, ensuring tar is installed"
+                        if ! command -v tar &> /dev/null; then
+                          sudo yum install -y tar
+                          echo "tar installed successfully"
+                        fi
+                      fi
                     - |
                       if [[ "{{ GithubRepoUrl }}" == s3://* ]]; then
                         # We need the awscli earlier so we can pull the repo from S3.
@@ -660,12 +685,29 @@ Resources:
                 action: ExecuteBash
                 timeoutSeconds: 1200
                 onFailure: Abort
-                maxAttempts: 1
+                maxAttempts: 2
                 inputs:
                   commands:
-                    - S3URL="{{ S3UrlNvidiaRpms }}"
-                    - if [ "$S3URL" = "none" ]; then S3URL=""; fi
-                    - AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
+                    - |
+                      if [ "{{ EnableAccelerator }}" = "nvidia" ]; then
+                          REBOOT_INDICATOR="/var/tmp/nvidia-reboot-indicator"
+                          if [ -f "${!REBOOT_INDICATOR}" ]; then
+                              echo "Post-reboot: Proceeding with NVIDIA driver installation"
+                              rm "${!REBOOT_INDICATOR}"
+                              S3URL="{{ S3UrlNvidiaRpms }}"
+                              if [ "$S3URL" = "none" ]; then S3URL=""; fi
+                              echo "AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh"
+                              AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
+                              exit 0
+                          fi
+                          echo "Pre-reboot: Setting up for NVIDIA driver installation"
+                          touch "${!REBOOT_INDICATOR}"
+                          exit 194
+                      else
+                          echo "NVIDIA accelerator not enabled. Skipping NVIDIA setup."
+                          exit 0
+                      fi
+
   CleanupComponent:
     Type: 'AWS::ImageBuilder::Component'
     Properties:
@@ -720,11 +762,11 @@ Resources:
           - IsAwsCliComponentEnabled
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
           - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - CheckStig
-          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component//stig-build-linux/x.x.x'
+          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux/x.x.x'
           - !Ref 'AWS::NoValue'
-        - ComponentArn: !Ref ImageBuilderComponent
         - !If
             - HasAdditionalComponents
             - { ComponentArn: !Ref AdditionalComponents }
