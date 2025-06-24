@@ -632,7 +632,7 @@ Resources:
                       fi
               - name: InstallNvidiaDriver
                 action: ExecuteBash
-                timeoutSeconds: 1200
+                timeoutSeconds: 1800
                 onFailure: Abort
                 maxAttempts: 2
                 inputs:
@@ -644,11 +644,24 @@ Resources:
                               echo "Post-reboot: Proceeding with NVIDIA driver installation"
                               rm "${!REBOOT_INDICATOR}"
                               S3URL="{{ S3UrlNvidiaRpms }}"
-                              if [ "$S3URL" = "none" ]; then S3URL=""; fi                              AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
+                              if [ "$S3URL" = "none" ]; then S3URL=""; fi
+                              AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
                               exit 0
                           fi
-                          echo "Pre-reboot: Setting up for NVIDIA driver installation"
+                          
+                          echo "Pre-reboot: Updating system and preparing for NVIDIA driver installation"
+                          
+                          # Update and upgrade system packages before reboot
+                          echo "Updating system packages to ensure latest kernel is installed..."
+                          sudo yum update -y
+                          sudo yum upgrade -y
+                          
+                          # Also install kernel packages for the new kernel
+                          echo "Installing kernel development packages for new kernel..."
+                          sudo yum -y install kernel-devel kernel-headers
+                          
                           touch "${!REBOOT_INDICATOR}"
+                          echo "System updated and prepared. Rebooting to load new kernel..."
                           exit 194
                       else
                           echo "NVIDIA accelerator not enabled. Skipping NVIDIA setup."
