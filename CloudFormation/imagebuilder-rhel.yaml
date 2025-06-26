@@ -145,10 +145,10 @@ Parameters:
     Type: String
     Description: The S3 URL for NVIDIA RPMs (optional)
     Default: "false"
-  AdditionalComponents:
+  AdditionalComponent:
     Type: String
     Default: ''
-    Description: 'Comma-separated list of additional Image Builder component ARNs to include'
+    Description: 'ARN of an additional Image Builder component to include'
 Mappings:
   RegionMap:
     af-south-1:
@@ -255,7 +255,7 @@ Conditions:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
       - 'true'
-  HasAdditionalComponents: !Not [!Equals [!Ref AdditionalComponents, '']]
+  HasAdditionalComponent: !Not [!Equals [!Ref AdditionalComponent, '']]
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -768,19 +768,19 @@ Resources:
       Description: 'RHEL EKS worker node recipe'
       Version: !Sub '${KubernetesVersion}.0'
       Components:
+        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - IsAwsCliComponentEnabled
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
           - !Ref 'AWS::NoValue'
-        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - CheckStig
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux/x.x.x'
           - !Ref 'AWS::NoValue'
-        - !If
-            - HasAdditionalComponents
-            - { ComponentArn: !Ref AdditionalComponents }
-            - !Ref 'AWS::NoValue'
+        - 'Fn::If':
+          - HasAdditionalComponent
+          - ComponentArn: !Ref AdditionalComponent
+          - !Ref 'AWS::NoValue'
         - ComponentArn: !Ref CleanupComponent
       WorkingDirectory: !If
         - EnableStigPartition
