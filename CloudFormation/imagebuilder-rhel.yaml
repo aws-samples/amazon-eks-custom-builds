@@ -768,11 +768,11 @@ Resources:
       Description: 'RHEL EKS worker node recipe'
       Version: !Sub '${KubernetesVersion}.0'
       Components:
-        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - IsAwsCliComponentEnabled
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
           - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - CheckStig
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux/x.x.x'
