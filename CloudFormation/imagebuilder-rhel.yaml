@@ -623,7 +623,7 @@ Resources:
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200
-                onFailure: Continue
+                onFailure: Abort
                 maxAttempts: 1
                 inputs:
                   commands:
