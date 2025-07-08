@@ -55,7 +55,7 @@ constants:
       value: 'false'
   - PauseContainerVersion:
       type: string
-      value: '3.5'
+      value: '3.10'
   - CacheContainerImages:
       type: string
       value: 'false'

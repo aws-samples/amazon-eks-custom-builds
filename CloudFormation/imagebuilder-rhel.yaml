@@ -94,7 +94,9 @@ Parameters:
       - '1.29'
       - '1.30'
       - '1.31'
-    Default: '1.31'
+      - '1.32'
+      - '1.33'
+    Default: '1.33'
     Description: The Kubernetes version of the worker nodes
     Type: String
   NerdctlUrl:
@@ -106,11 +108,11 @@ Parameters:
     Description: The version of nerdctl to install
     Type: String
   NodeAdmBuildImage:
-    Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+    Default: 'public.ecr.aws/eks-distro-build-tooling/golang:1.24'
     Description: The version of the nodeadmin build image to install
     Type: String
   PauseContainerImage:
-    Default: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
+    Default: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.10'
     Description: The pause container image to use
     Type: String
   RuncVersion:
