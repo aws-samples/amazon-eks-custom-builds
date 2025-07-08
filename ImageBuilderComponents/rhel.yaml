@@ -7,7 +7,7 @@ constants:
       value: 'us-west-2'
   - KubernetesVersion:
       type: string
-      value: '1.30'
+      value: '1.33'
   - GithubRepoUrl:
       type: string
       value: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
@@ -37,10 +37,10 @@ constants:
       value: '*'
   - NodeAdmBuildImage:
       type: string
-      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.23'
+      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.24'
   - PauseContainerImage:
       type: string
-      value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.5'
+      value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.10'
   - RuncVersion:
       type: string
       value: '*'
