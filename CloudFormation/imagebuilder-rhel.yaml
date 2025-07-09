@@ -6,6 +6,13 @@ Parameters:
     Default: 'amazon-eks'
     Description: The S3 bucket where the EKS binaries are hosted
     Type: String
+  RHELVersion:
+    Type: String
+    Default: '8'
+    AllowedValues:
+      - '8'
+      - '9'
+    Description: 'RHEL version to use (8 or 9)'
   BinaryBucketRegion:
     Default: 'us-west-2'
     Description: The AWS region where the EKS binary S3 bucket resides
@@ -38,6 +45,10 @@ Parameters:
     Default: 'false'
     Description: Whether or not to enable STIG image component
     Type: String
+  RootVolumeSize:
+    Type: Number
+    Default: 50
+    Description: Size in GB for the root volume
   AWSCliUrl:
     Default: 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip'
     Description: The location of the AWS ClI zip.
@@ -132,7 +143,10 @@ Parameters:
     Type: String
     Description: The S3 URL for NVIDIA RPMs (optional)
     Default: "false"
-
+  AdditionalComponent:
+    Type: String
+    Default: ''
+    Description: 'ARN of an additional Image Builder component to include'
 Mappings:
   RegionMap:
     af-south-1:
@@ -227,10 +241,15 @@ Conditions:
   UseCustomSecurityGroupId: !Not [!Equals [!Ref SecurityGroupId, '']]
   HasGithubS3Bucket: !Not [!Equals [!Ref GithubS3BucketName, '']]
   HasNvidiaS3Url: !Not [!Equals [!Ref S3UrlNvidiaRpms, 'none']]
+  IsStigEnabled:
+    'Fn::Equals':
+      - Ref: EnableStig
+      - 'true'
   IsAwsCliComponentEnabled:
     'Fn::Equals':
       - Ref: EnableAwsCliComponent
       - 'true'
+  HasAdditionalComponent: !Not [!Equals [!Ref AdditionalComponent, '']]
 Resources:
   ImageBuilderRole:
     Type: 'AWS::IAM::Role'
@@ -299,6 +318,14 @@ Resources:
                 - HasGithubS3Bucket
                 - !Sub 'arn:${AWS::Partition}:s3:::${GithubS3BucketName}/*'
                 - !Ref 'AWS::NoValue'
+              - 'Fn::If':
+                - IsStigEnabled
+                - !Sub 'arn:${AWS::Partition}:s3:::aws-windows-downloads-${AWS::Region}/*'
+                - !Ref 'AWS::NoValue'
+              - 'Fn::If':
+                - IsStigEnabled
+                - !Sub 'arn:${AWS::Partition}:s3:::aws-windows-downloads-${AWS::Region}'
+                - !Ref 'AWS::NoValue'
       PolicyName: !Sub '${AWS::StackName}-S3Policy'
       Roles: 
         - !Ref ImageBuilderRole
@@ -342,6 +369,7 @@ Resources:
       ChangeDescription: 'change-description'
       SupportedOsVersions: 
           - 'Red Hat Enterprise Linux 8'
+          - 'Red Hat Enterprise Linux 9'
       Data: !Sub |
         name: Amazon EKS Optimized RHEL AMI
         description: Installs Amazon EKS-optimized RHEL artifacts for Amazon EKS version ${KubernetesVersion}.
@@ -407,6 +435,9 @@ Resources:
           - EnableFips:
               type: string
               value: '${EnableFips}'
+          - EnableStig:
+              type: string
+              value: '${EnableStig}'
           - AWSCliUrl:
               type: string
               value: '${AWSCliUrl}'
@@ -433,6 +464,16 @@ Resources:
                 inputs:
                   commands:
                     - cd {{ HomePath }}
+                    - |
+                      # Check and install tar if STIG is enabled
+                      # Currently the STIG component removes this.
+                      if [ "{{ EnableStig }}" = "true" ]; then
+                        echo "STIG is enabled, ensuring tar is installed"
+                        if ! command -v tar &> /dev/null; then
+                          sudo yum install -y tar
+                          echo "tar installed successfully"
+                        fi
+                      fi
                     - |
                       if [[ "{{ GithubRepoUrl }}" == s3://* ]]; then
                         # We need the awscli earlier so we can pull the repo from S3.
@@ -466,6 +507,43 @@ Resources:
                     - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
                     - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
                     - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+              - name: InstallNvidiaDriver
+                action: ExecuteBash
+                timeoutSeconds: 1800
+                onFailure: Abort
+                maxAttempts: 2
+                inputs:
+                  commands:
+                    - |
+                      if [ "{{ EnableAccelerator }}" = "nvidia" ]; then
+                          REBOOT_INDICATOR="/var/tmp/nvidia-reboot-indicator"
+                          if [ -f "${!REBOOT_INDICATOR}" ]; then
+                              echo "Post-reboot: Proceeding with NVIDIA driver installation"
+                              rm "${!REBOOT_INDICATOR}"
+                              S3URL="{{ S3UrlNvidiaRpms }}"
+                              if [ "$S3URL" = "none" ]; then S3URL=""; fi
+                              AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
+                              exit 0
+                          fi
+                          
+                          echo "Pre-reboot: Updating system and preparing for NVIDIA driver installation"
+                          
+                          # Update and upgrade system packages before reboot
+                          echo "Updating system packages to ensure latest kernel is installed..."
+                          sudo yum update -y
+                          sudo yum upgrade -y
+                          
+                          # Also install kernel packages for the new kernel
+                          echo "Installing kernel development packages for new kernel..."
+                          sudo yum -y install kernel-devel kernel-headers
+                          
+                          touch "${!REBOOT_INDICATOR}"
+                          echo "System updated and prepared. Rebooting to load new kernel..."
+                          exit 194
+                      else
+                          echo "NVIDIA accelerator not enabled. Skipping NVIDIA setup."
+                          exit 0
+                      fi
               - name: EnableFIPS
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -509,16 +587,6 @@ Resources:
                 inputs:
                   commands:
                     - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
-              - name: InstallNvidiaDriver
-                action: ExecuteBash
-                timeoutSeconds: 1200
-                onFailure: Abort
-                maxAttempts: 1
-                inputs:
-                  commands:
-                    - S3URL="{{ S3UrlNvidiaRpms }}"
-                    - if [ "$S3URL" = "none" ]; then S3URL=""; fi
-                    - AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} S3_URL_NVIDIA_RPMS=$S3URL RETAIN_NVIDIA_RPM={{ RetainNvidiaRPM }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nvidia-driver.sh
               - name: InstallEFA
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -527,6 +595,33 @@ Resources:
                 inputs:
                   commands:
                     - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
+  CleanupComponent:
+    Type: 'AWS::ImageBuilder::Component'
+    Properties:
+      Name: !Sub '${AWS::StackName}-cleanup'
+      Description: 'Cleanup component for RHEL EKS worker node'
+      Platform: 'Linux'
+      Version: '1.0.0'
+      Data: !Sub |
+        name: Cleanup
+        description: Performs cleanup operations
+        schemaVersion: 1.0
+        constants:
+          - HomePath:
+              type: string
+              value: '${HomePath}'
+          - GithubDir:
+              type: string
+              value: '${GithubDir}'
+          - TempPath:
+              type: string
+              value: '${TempPath}'
+          - WorkerDir:
+              type: string
+              value: '${WorkerDir}'
+        phases:
+          - name: build
+            steps:
               - name: Cleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -534,12 +629,14 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
+                    - echo "Starting cleanup process..."
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
                     - sudo rm -rf {{ HomePath }}/*
                     - sudo rm -rf {{ TempPath }}/provisioners
                     - sudo rm -rf {{ TempPath }}/hack
                     - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+                    - echo "Cleanup complete"
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
@@ -552,22 +649,28 @@ Resources:
           - IsAwsCliComponentEnabled
           - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-linux/x.x.x'
           - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref ImageBuilderComponent
         - 'Fn::If':
           - CheckStig
-          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux-high/x.x.x'
+          - ComponentArn: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/stig-build-linux/x.x.x'
           - !Ref 'AWS::NoValue'
-        - ComponentArn: !Ref ImageBuilderComponent
-      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-8-x86/x.x.x'
+        - 'Fn::If':
+          - HasAdditionalComponent
+          - ComponentArn: !Ref AdditionalComponent
+          - !Ref 'AWS::NoValue'
+        - ComponentArn: !Ref CleanupComponent
+
+      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/red-hat-enterprise-linux-${RHELVersion}-x86/x.x.x'
+      AdditionalInstanceConfiguration:
+        SystemsManagerAgent:
+          UninstallAfterBuild: false
       BlockDeviceMappings: 
         - DeviceName: '/dev/sda1'
           Ebs: 
             DeleteOnTermination: true
             Encrypted: false
-            VolumeSize: 50
+            VolumeSize: !Sub '${RootVolumeSize}'
             VolumeType: 'gp3'
-      AdditionalInstanceConfiguration:
-        SystemsManagerAgent:
-          UninstallAfterBuild: false
 
   ImageBuilderDistributionConfiguration:
     Type: 'AWS::ImageBuilder::DistributionConfiguration'
