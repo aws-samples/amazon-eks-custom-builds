@@ -7,7 +7,7 @@ constants:
       value: 'us-west-2'
   - KubernetesVersion:
       type: string
-      value: '1.33'
+      value: '1.34'
   - GithubRepoUrl:
       type: string
       value: 'https://github.com/aws-samples/amazon-eks-ami-rhel.git'
@@ -37,11 +37,17 @@ constants:
       value: '*'
   - NodeAdmBuildImage:
       type: string
-      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.24'
+      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.25'
   - PauseContainerImage:
       type: string
       value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.10'
   - RuncVersion:
+      type: string
+      value: '*'
+  - SociUrl:
+      type: string
+      value: 'https://api.github.com/repos/awslabs/soci-snapshotter/releases'
+  - SociVersion:
       type: string
       value: '*'
   - TempPath:
@@ -88,6 +94,14 @@ phases:
             - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
             - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
             - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+      - name: SetClockSource
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/set-clocksource.sh
       - name: EnableFIPS
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -96,14 +110,14 @@ phases:
         inputs:
           commands:
             - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/enable-fips.sh; fi
-      - name: EnableEFA
+      - name: LimitCStates
         action: ExecuteBash
         timeoutSeconds: 1200
         onFailure: Abort
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/limit-c-states.sh; fi
+            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/limit-c-states.sh; fi
       - name: InstallWorker
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -114,7 +128,7 @@ phases:
             - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{AWSRegion}} {{ BinaryBucketRegion }} {{ BinaryBucketName }})
             - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
             - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
-            - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
+            - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINER_SELINUX_VERSION={{ ContainerSELinuxVersion }} CONTAINERD_URL={{ ContainerdUrl }} CONTAINERD_VERSION={{ ContainerdVersion }} NERDCTL_URL={{ NerdctlUrl }} NERDCTL_VERSION={{ NerdctlVersion }} RUNC_VERSION={{ RuncVersion }} SOCI_URL={{ SociUrl }} SOCI_VERSION={{ SociVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-worker.sh
       - name: InstallNodeAdm
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -122,7 +136,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-nodeadm.sh
       - name: CachePauseContainer
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -130,7 +144,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
+            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/cache-pause-container.sh
       - name: InstallEFA
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -138,7 +152,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
+            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/install-efa.sh; fi
       - name: Cleanup
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -147,8 +161,38 @@ phases:
         inputs:
           commands:
             - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+      - name: Validate
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
             - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/validate.sh
+      - name: GenerateVersionInfo
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/generate-version-info.sh {{ TempPath }}/{{ WorkerDir}}/version-info.json
+      - name: ConfigureSELinux
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/configure-selinux.sh
+      - name: FinalCleanup
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
             - sudo rm -rf {{ HomePath }}/*
             - sudo rm -rf {{ TempPath }}/provisioners
             - sudo rm -rf {{ TempPath }}/hack
-            - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
