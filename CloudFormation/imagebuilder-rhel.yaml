@@ -671,6 +671,14 @@ Resources:
                 inputs:
                   commands:
                     - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/generate-version-info.sh {{ TempPath }}/{{ WorkerDir}}/version-info.json
+              - name: ConfigureSELinux
+                action: ExecuteBash
+                timeoutSeconds: 1200
+                onFailure: Abort
+                maxAttempts: 1
+                inputs:
+                  commands:
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/configure-selinux.sh
               - name: FinalCleanup
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -683,14 +691,6 @@ Resources:
                     - sudo rm -rf {{ TempPath }}/provisioners
                     - sudo rm -rf {{ TempPath }}/hack
                     - echo "Cleanup complete"
-              - name: ConfigureSELinux
-                action: ExecuteBash
-                timeoutSeconds: 1200
-                onFailure: Abort
-                maxAttempts: 1
-                inputs:
-                  commands:
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/rhel/provisioners/configure-selinux.sh
 
   ImageBuilderImageRecipe:
     Type: 'AWS::ImageBuilder::ImageRecipe'
