@@ -22,16 +22,25 @@ constants:
       value: 'us-west-2'
   - ContainerdVersion:
       type: string
-      value: '1.7.*'
+      value: '2.1.*'
+  - InstallContainerdFromS3:
+      type: string
+      value: 'false'
   - NodeAdmBuildImage:
       type: string
-      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.24'
+      value: 'public.ecr.aws/eks-distro-build-tooling/golang:1.25'
   - NvidiaDriverMajorVersion:
       type: string
-      value: '560'
+      value: '580'
+  - NvidiaRepositoryUrl:
+      type: string
+      value: ''
+  - NvidiaGridRunfileBucketName:
+      type: string
+      value: 'ec2-linux-nvidia-drivers'
   - PauseContainerImage:
       type: string
-      value: '602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/pause:3.10'
+      value: 'public.ecr.aws/eks-distro/kubernetes/pause:3.10'
   - RuncVersion:
       type: string
       value: '*'
@@ -73,8 +82,10 @@ phases:
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
+            - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/gpu
             - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/shared/runtime/* {{ TempPath }}/{{ WorkerDir}}/shared/
             - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/gpu/* {{ TempPath }}/{{ WorkerDir}}/gpu/
             - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
             - sudo mkdir -p /etc/eks/log-collector-script/
             - sudo cp -v {{ TempPath }}/{{ WorkerDir}}/log-collector-script/eks-log-collector.sh /etc/eks/log-collector-script/
@@ -82,6 +93,15 @@ phases:
             - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
             - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
             - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+            - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/gpu/*
+      - name: SetClockSource
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/set-clocksource.sh
       - name: EnableFIPS
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -90,14 +110,14 @@ phases:
         inputs:
           commands:
             - if [ "{{ EnableFips }}" = "true" ]; then ENABLE_FIPS={{ EnableFips }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/enable-fips.sh; fi
-      - name: EnableEFA
+      - name: LimitCStates
         action: ExecuteBash
         timeoutSeconds: 1200
         onFailure: Abort
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/limit-c-states.sh; fi
+            - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/limit-c-states.sh; fi
       - name: InstallWorker
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -108,7 +128,7 @@ phases:
             - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{AWSRegion}} {{ BinaryBucketRegion }} {{ BinaryBucketName }})
             - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
             - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
-            - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-worker.sh
+            - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} INSTALL_CONTAINERD_FROM_S3={{ InstallContainerdFromS3 }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-worker.sh
       - name: InstallNodeAdm
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -116,7 +136,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
+            - BUILD_IMAGE={{ NodeAdmBuildImage }} AWS_REGION={{ AWSRegion }} PROJECT_DIR={{ TempPath }}/{{ WorkerDir}}/nodeadm AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nodeadm.sh
       - name: CachePauseContainer
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -124,7 +144,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/cache-pause-container.sh
+            - PAUSE_CONTAINER_IMAGE={{ PauseContainerImage }} AWS_REGION={{ AWSRegion }} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/cache-pause-container.sh
       - name: InstallNeuronDriver
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -132,7 +152,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableAccelerator }}" = "neuron" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-neuron-driver.sh; fi
+            - if [ "{{ EnableAccelerator }}" = "neuron" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-neuron-driver.sh; fi
       - name: InstallNvidiaDriver
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -140,7 +160,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableAccelerator }}" = "nvidia" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} NVIDIA_DRIVER_MAJOR_VERSION={{ NvidiaDriverMajorVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nvidia-driver.sh; fi
+            - if [ "{{ EnableAccelerator }}" = "nvidia" ]; then AWS_REGION={{ AWSRegion }} ENABLE_ACCELERATOR={{ EnableAccelerator }} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} NVIDIA_DRIVER_MAJOR_VERSION={{ NvidiaDriverMajorVersion }} NVIDIA_REPOSITORY={{ NvidiaRepositoryUrl }} EC2_GRID_DRIVER_S3_BUCKET={{ NvidiaGridRunfileBucketName }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-nvidia-driver.sh; fi
       - name: InstallEFA
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -148,7 +168,7 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-efa.sh; fi
+            - if [ "{{ EnableEfa }}" = "true" ]; then AWS_REGION={{ AWSRegion }} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-efa.sh; fi
       - name: Cleanup
         action: ExecuteBash
         timeoutSeconds: 1200
@@ -157,8 +177,38 @@ phases:
         inputs:
           commands:
             - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
-            - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/validate.sh
+      - name: Validate
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - ENABLE_ACCELERATOR={{ EnableAccelerator }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/validate.sh
+      - name: GenerateVersionInfo
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/generate-version-info.sh {{ TempPath }}/{{ WorkerDir}}/version-info.json
+      - name: FinalCleanup
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
             - sudo rm -rf {{ HomePath }}/*
             - sudo rm -rf {{ TempPath }}/provisioners
             - sudo rm -rf {{ TempPath }}/hack
-            - sudo rm -rf {{ TempPath }}/{{ WorkerDir}}
+      - name: ConfigureSELinux
+        action: ExecuteBash
+        timeoutSeconds: 1200
+        onFailure: Abort
+        maxAttempts: 1
+        inputs:
+          commands:
+            - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/configure-selinux.sh
