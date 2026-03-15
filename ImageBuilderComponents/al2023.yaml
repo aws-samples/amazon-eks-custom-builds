@@ -7,7 +7,7 @@ constants:
       value: 'us-west-2'
   - KubernetesVersion:
       type: string
-      value: '1.34'
+      value: '1.35'
   - GithubRepoUrl:
       type: string
       value: 'https://github.com/awslabs/amazon-eks-ami.git'
@@ -22,7 +22,7 @@ constants:
       value: 'us-west-2'
   - ContainerdVersion:
       type: string
-      value: '2.1.*'
+      value: '2.*'
   - InstallContainerdFromS3:
       type: string
       value: 'false'
@@ -34,7 +34,7 @@ constants:
       value: '580'
   - NvidiaRepositoryUrl:
       type: string
-      value: ''
+      value: 'none'
   - NvidiaGridRunfileBucketName:
       type: string
       value: 'ec2-linux-nvidia-drivers'
@@ -125,9 +125,9 @@ phases:
         maxAttempts: 1
         inputs:
           commands:
-            - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{AWSRegion}} {{ BinaryBucketRegion }} {{ BinaryBucketName }})
-            - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_version=\K[^\s]+')
-            - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -oP 'kubernetes_build_date=\K[^\s]+')
+            - KUBERNETES_VERSION_AND_BUILD_DATE=$({{ HomePath }}/{{ GithubDir }}/hack/latest-binaries.sh {{ KubernetesVersion }} {{AWSRegion}})
+            - KUBERNETES_VERSION=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -o 'kubernetes_version=[^ ]*' | cut -d= -f2)
+            - KUBERNETES_BUILD_DATE=$(echo $KUBERNETES_VERSION_AND_BUILD_DATE | grep -o 'kubernetes_build_date=[^ ]*' | cut -d= -f2)
             - KUBERNETES_VERSION=$KUBERNETES_VERSION KUBERNETES_BUILD_DATE=$KUBERNETES_BUILD_DATE AWS_REGION={{ AWSRegion }} BINARY_BUCKET_NAME={{ BinaryBucketName }} BINARY_BUCKET_REGION={{ BinaryBucketRegion }} CONTAINERD_VERSION={{ ContainerdVersion }} INSTALL_CONTAINERD_FROM_S3={{ InstallContainerdFromS3 }} RUNC_VERSION={{ RuncVersion }} SSM_AGENT_VERSION={{ SSMAgentVersion }} WORKING_DIR={{ TempPath }}/{{ WorkerDir}} AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= AWS_SESSION_TOKEN= bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/install-worker.sh
       - name: InstallNodeAdm
         action: ExecuteBash
