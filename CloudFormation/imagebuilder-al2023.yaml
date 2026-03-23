@@ -358,6 +358,7 @@ Resources:
                     - cd {{ HomePath }}
                     - git clone {{ GithubRepoUrl }}
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
+                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/bin
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/gpu
