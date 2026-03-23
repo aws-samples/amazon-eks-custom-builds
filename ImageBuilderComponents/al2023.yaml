@@ -82,9 +82,9 @@ phases:
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
             - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/gpu
-            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
-            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/* {{ TempPath }}/{{ WorkerDir}}/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/bin/* {{ TempPath }}/{{ WorkerDir}}/bin/
             - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/gpu/* {{ TempPath }}/{{ WorkerDir}}/gpu/
+            - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
             - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
             - sudo mkdir -p /etc/eks/log-collector-script/
             - sudo cp -v {{ TempPath }}/{{ WorkerDir}}/log-collector-script/eks-log-collector.sh /etc/eks/log-collector-script/
