@@ -358,11 +358,10 @@ Resources:
                     - cd {{ HomePath }}
                     - git clone {{ GithubRepoUrl }}
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/rootfs
-                    - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/shared
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/log-collector-script
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/nodeadm
                     - sudo mkdir -p {{ TempPath }}/{{ WorkerDir}}/gpu
-                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/shared/runtime/* {{ TempPath }}/{{ WorkerDir}}/shared/
+                    - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/bin/* {{ TempPath }}/{{ WorkerDir}}/bin/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/rootfs/* {{ TempPath }}/{{ WorkerDir}}/rootfs/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/templates/al2023/runtime/gpu/* {{ TempPath }}/{{ WorkerDir}}/gpu/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/log-collector-script/linux/* {{ TempPath }}/{{ WorkerDir}}/log-collector-script/
@@ -370,8 +369,8 @@ Resources:
                     - sudo cp -v {{ TempPath }}/{{ WorkerDir}}/log-collector-script/eks-log-collector.sh /etc/eks/log-collector-script/
                     - sudo cp -r {{ HomePath }}/{{ GithubDir }}/nodeadm/* {{ TempPath }}/{{ WorkerDir}}/nodeadm/
                     - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/rootfs/* /
-                    - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/shared/bin/
-                    - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/shared/bin/* /usr/bin/
+                    - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/bin/
+                    - sudo cp -rv {{ TempPath }}/{{ WorkerDir}}/bin/* /usr/bin/
                     - sudo chmod -R a+x {{ TempPath }}/{{ WorkerDir}}/gpu/*
               - name: SetClockSource
                 action: ExecuteBash
@@ -380,7 +379,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/set-clocksource.sh
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/set-clocksource.sh
               - name: EnableFIPS
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -396,7 +395,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/limit-c-states.sh; fi
+                    - if [ "{{ EnableEfa }}" = "true" ]; then ENABLE_EFA={{ EnableEfa }} bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/limit-c-states.sh; fi
               - name: InstallWorker
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -455,7 +454,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/cleanup.sh
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/cleanup.sh
               - name: Validate
                 action: ExecuteBash
                 timeoutSeconds: 1200
@@ -471,7 +470,7 @@ Resources:
                 maxAttempts: 1
                 inputs:
                   commands:
-                    - bash {{ HomePath }}/{{ GithubDir }}/templates/shared/provisioners/generate-version-info.sh {{ TempPath }}/{{ WorkerDir}}/version-info.json
+                    - bash {{ HomePath }}/{{ GithubDir }}/templates/al2023/provisioners/generate-version-info.sh {{ TempPath }}/{{ WorkerDir}}/version-info.json
               - name: ConfigureSELinux
                 action: ExecuteBash
                 timeoutSeconds: 1200
